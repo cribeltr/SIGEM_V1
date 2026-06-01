@@ -556,10 +556,10 @@
   // LÓGICA DE DOMINIO — ciclos correctivos, pendientes auto, efectos de evento
   // ==========================================================================
   function abrirCiclo(folio, inv, fecha, ingeniero, descripcion) {
-    if (!folio) folio = 'SIGEM-AUTO-' + String(state.counters.ciclo).padStart(4, '0');
+    folio = folio || null;   // ya NO se genera folio automático: si no hay, queda vacío
     const yaAbierto = ciclosAbiertosDe(inv);
     if (yaAbierto.length > 0) {
-      if (!UI.confirm(`El equipo ${inv} ya tiene un ciclo abierto (${yaAbierto[0].folio}). ¿Abrir otro de todos modos?`)) return null;
+      if (!UI.confirm(`El equipo ${inv} ya tiene un ciclo correctivo abierto (${yaAbierto[0].folio || 'sin folio'}). ¿Abrir otro de todos modos?`)) return null;
     }
     const ciclo = {
       folio, inv,
@@ -571,7 +571,7 @@
       id: state.counters.ciclo++
     };
     state.ciclos.push(ciclo);
-    audit('ciclo', ciclo.folio, 'estado', null, 'abierto');
+    audit('ciclo', ciclo.folio || ('#' + ciclo.id), 'estado', null, 'abierto');
     return ciclo;
   }
   function cerrarCiclo(folio, fecha, motivo) {
@@ -623,25 +623,13 @@
       }
       if (ev.subestado) { eq.subestado = ev.subestado; }
     }
-    // Ciclo
+    // Ciclo correctivo
     if (tipo === 'Solicitud de trabajo') {
-      const c = abrirCiclo(ev.folio, ev.inv, ev.fecha, ev.ejecutor, ev.obs);
-      // Si el folio se generó automáticamente, se copia al evento para que quede
-      // visible y vinculado al ciclo (antes el evento quedaba sin folio).
-      if (c && !ev.folio) ev.folio = c.folio;
-    }
-    if (tipo === 'Reparación' && ev.estado === 'operativo' && ev.folio) {
-      const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
-      if (c) cerrarCiclo(ev.folio, ev.fecha);
-    }
-    // Recepción operativa = el equipo retornó funcionando → cierra el ciclo.
-    if (tipo === 'Recepción' && ev.estado === 'operativo' && ev.folio) {
-      const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
-      if (c) cerrarCiclo(ev.folio, ev.fecha);
-    }
-    if (tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva' && ev.estado === 'operativo' && ev.folio) {
-      const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
-      if (c) cerrarCiclo(ev.folio, ev.fecha);
+      abrirCiclo(ev.folio, ev.inv, ev.fecha, ev.ejecutor, ev.obs); // si no hay folio, el ciclo queda con folio vacío
+    } else if ((tipo === 'Reparación' || tipo === 'Recepción' || (tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo') {
+      // Cierra el ciclo correctivo: por folio si el evento lo trae; si no, el ciclo abierto del equipo.
+      const c = state.ciclos.find(x => x.estado === 'abierto' && (ev.folio ? x.folio === ev.folio : x.inv === ev.inv));
+      if (c) { c.estado = 'cerrado'; c.fechaCierre = ev.fecha || hoyLocal(); audit('ciclo', c.folio || ('#' + c.id), 'estado', 'abierto', 'cerrado'); }
     }
     // MP
     if (tipo === 'Mantención preventiva') {
@@ -1304,31 +1292,31 @@
       if (eq.estado !== estadoAntes) revertidos.push(`estado: ${ESTADO_LABEL[estadoAntes]} → ${ESTADO_LABEL[eq.estado]}`);
     }
 
-    // 3. Solicitud que abrió ciclo: anular ciclo si no quedan más eventos
-    if (ev.tipo === 'Solicitud de trabajo' && ev.folio) {
-      const ciclo = state.ciclos.find(c => c.folio === ev.folio);
+    // 3. Solicitud que abrió ciclo: anular ciclo si no quedan más eventos (por folio o, sin folio, por equipo+fecha).
+    if (ev.tipo === 'Solicitud de trabajo') {
+      const ciclo = state.ciclos.find(c => ev.folio ? c.folio === ev.folio : (c.inv === ev.inv && c.fechaApertura === ev.fecha));
       if (ciclo) {
-        const otros = state.eventos.filter(x => x.id !== ev.id && !x.anulado && x.folio === ev.folio);
+        const correctivos = ['Visita técnica', 'Orden de Compra', 'Envío a servicio técnico', 'Recepción', 'Reparación'];
+        const otros = state.eventos.filter(x => x.id !== ev.id && !x.anulado && (ev.folio ? x.folio === ev.folio : (x.inv === ev.inv && correctivos.indexOf(x.tipo) >= 0)));
         if (otros.length === 0) {
           ciclo.estado = 'anulado';
           ciclo.anulado = true;
           ciclo.fechaCierre = ev.fecha;
-          revertidos.push(`ciclo ${ev.folio} anulado`);
+          revertidos.push(`ciclo ${ev.folio || '(sin folio)'} anulado`);
         }
       }
     }
     // 4. Cierre que cerró ciclo: reabrir si no hay otro cierre operativo
-    if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva'))
-      && ev.estado === 'operativo' && ev.folio) {
-      const ciclo = state.ciclos.find(c => c.folio === ev.folio);
+    if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo') {
+      const ciclo = state.ciclos.find(c => ev.folio ? c.folio === ev.folio : (c.inv === ev.inv && c.estado === 'cerrado' && c.fechaCierre === ev.fecha));
       if (ciclo && ciclo.estado === 'cerrado') {
-        const otraOp = state.eventos.find(x => x.id !== ev.id && !x.anulado && x.folio === ev.folio &&
+        const otraOp = state.eventos.find(x => x.id !== ev.id && !x.anulado && (ev.folio ? x.folio === ev.folio : x.inv === ev.inv) &&
           (x.tipo === 'Reparación' || x.tipo === 'Recepción' || (x.tipo === 'Visita técnica' && x.tipoVisita === 'correctiva')) &&
           x.estado === 'operativo');
         if (!otraOp) {
           ciclo.estado = 'abierto';
           ciclo.fechaCierre = null;
-          revertidos.push(`ciclo ${ev.folio} reabierto`);
+          revertidos.push(`ciclo ${ev.folio || '(sin folio)'} reabierto`);
         }
       }
     }
@@ -1615,14 +1603,17 @@
     if (state.counters.ciclo == null) state.counters.ciclo = 1;
     let n = 0;
     state.eventos.forEach(ev => {
-      if (ev.tipo === 'Solicitud de trabajo' && ev.folio && !ev.anulado && !state.ciclos.find(c => c.folio === ev.folio)) {
-        state.ciclos.push({ folio: ev.folio, inv: ev.inv, fechaApertura: ev.fecha, fechaCierre: null, estado: 'abierto', descripcionInicial: ev.obs || '', ingenieroAsignado: ev.ejecutor || null, id: state.counters.ciclo++ });
-        n++;
-      }
+      if (ev.tipo !== 'Solicitud de trabajo' || ev.anulado) return;
+      const existe = ev.folio
+        ? state.ciclos.find(c => c.folio === ev.folio)
+        : state.ciclos.find(c => c.inv === ev.inv && c.fechaApertura === ev.fecha);
+      if (existe) return;
+      state.ciclos.push({ folio: ev.folio || null, inv: ev.inv, fechaApertura: ev.fecha, fechaCierre: null, estado: 'abierto', descripcionInicial: ev.obs || '', ingenieroAsignado: ev.ejecutor || null, id: state.counters.ciclo++ });
+      n++;
     });
     state.eventos.forEach(ev => {
-      if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo' && ev.folio && !ev.anulado) {
-        const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
+      if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo' && !ev.anulado) {
+        const c = state.ciclos.find(x => x.estado === 'abierto' && (ev.folio ? x.folio === ev.folio : x.inv === ev.inv));
         if (c) { c.estado = 'cerrado'; c.fechaCierre = ev.fecha; }
       }
     });

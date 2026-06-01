@@ -416,7 +416,7 @@
       h('div', { style: { width: '280px', flex: '0 0 auto' } },
         h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclo correctivo')),
           h('div', { class: 's-bd' }, ciclosAb.length
-            ? h('div', {}, h('div', { class: 'mono' }, ciclosAb[0].folio), h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '4px' } }, 'Abierto desde ' + fmtFecha(ciclosAb[0].fechaApertura)),
+            ? h('div', {}, h('div', { class: 'mono' }, ciclosAb[0].folio || '(sin folio)'), h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '4px' } }, 'Abierto desde ' + fmtFecha(ciclosAb[0].fechaApertura)),
               h('button', { class: 'btn sm', style: { marginTop: '9px' }, onclick: () => { const m = window.prompt('Justificación del cierre manual:'); if (m) { H.cerrarCicloManual(ciclosAb[0], m); } } }, 'Cerrar ciclo'))
             : h('div', { class: 'faint' }, 'Sin ciclo abierto'))),
         h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, `MP ${YEAR}`)),
@@ -480,7 +480,7 @@
     return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclos correctivos')),
       h('div', { class: 's-bd flush' }, cs.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Folio'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
-        h('tbody', {}, ...cs.map(c => h('tr', {}, h('td', { class: 'mono' }, c.folio), h('td', {}, fmtFecha(c.fechaApertura)), h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
+        h('tbody', {}, ...cs.map(c => h('tr', {}, h('td', { class: 'mono' }, c.folio || '—'), h('td', {}, fmtFecha(c.fechaApertura)), h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
           h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')))))) : h('div', { class: 'empty' }, 'Sin ciclos')));
   }
   function tabPendientes(eq) {
@@ -648,7 +648,7 @@
       mount(wrap, list.length ? h('table', { class: 'dense' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Folio'), h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
         h('tbody', {}, ...list.map(c => { const eq = H.findEquipo(c.inv) || {}; return h('tr', { onclick: () => go('equipo', { inv: c.inv, tab: 'ciclos' }) },
-          h('td', { class: 'mono' }, c.folio), h('td', { class: 'mono' }, c.inv), h('td', {}, eq.equipo || '—'), h('td', {}, fmtFecha(c.fechaApertura)),
+          h('td', { class: 'mono' }, c.folio || '—'), h('td', { class: 'mono' }, c.inv), h('td', {}, eq.equipo || '—'), h('td', {}, fmtFecha(c.fechaApertura)),
           h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'), h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')); }))
       ) : h('div', { class: 'empty' }, 'Sin ciclos'));
     }
@@ -954,8 +954,8 @@
       const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], '');
       const oficial = selectEl([['No', 'Borrador'], ['Sí', 'Oficial']], 'No');
       const obs = h('textarea', { placeholder: 'Observación / informe…' });
-      function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio, c.folio]), ['', '— sin vincular —']], ciclosAb[0].folio) : h('input', { type: 'text', placeholder: 'Folio SIGEM' }); }
-      if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'Folio (vacío = auto)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Folio SIGEM', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
+      function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio || '', c.folio || '(sin folio)']), ['', '— sin vincular —']], ciclosAb[0].folio || '') : h('input', { type: 'text', placeholder: 'Folio SIGEM' }); }
+      if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'Folio SIGEM (opcional)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Folio SIGEM', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
       else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('Folio SIGEM', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
       else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Oficial', oficial)), field('Observación', obs)); }
       else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Folio SIGEM', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
