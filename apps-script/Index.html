@@ -2668,9 +2668,20 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     }));
   }
   function tabBitacora(eq) {
-    const evs = H.eventosDeTodos(eq.inv).reverse();
-    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Bitácora completa'), h('span', { class: 's-sub' }, `${evs.length} eventos`)),
-      h('div', { class: 's-bd flush' }, evs.length ? eventosTable(evs, true) : h('div', { class: 'empty' }, 'Sin eventos')));
+    const all = H.eventosDeTodos(eq.inv).reverse();
+    let verAuto = false;
+    const body = h('div', { class: 's-bd flush' });
+    const sub = h('span', { class: 's-sub' });
+    function render() {
+      const evs = verAuto ? all : all.filter(e => !H.eventoEsAuto(e));
+      const ocultos = all.length - evs.length;
+      sub.textContent = `${evs.length} eventos` + (!verAuto && ocultos ? ` · ${ocultos} importados ocultos` : '');
+      mount(body, evs.length ? eventosTable(evs, true) : h('div', { class: 'empty' }, verAuto ? 'Sin eventos' : 'Sin registros manuales'));
+    }
+    const chk = h('label', { class: 'checkbox', style: { fontSize: '12px' }, title: 'Mostrar también los eventos importados desde el maestro' },
+      h('input', { type: 'checkbox', onchange: e => { verAuto = e.target.checked; render(); } }), 'Ver importados');
+    render();
+    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Bitácora'), sub, h('div', { class: 'tb-spacer' }), chk), body);
   }
   function tabCiclos(eq) {
     const cs = H.ciclosDe(eq.inv);
@@ -2857,13 +2868,15 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // ---- EVENTOS (bitácora global) ------------------------------------------
   VIEWS.eventos = function () {
     const S = H.getState();
-    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '', desde: '', hasta: '', dup: !!params.dup };
+    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '', desde: '', hasta: '', dup: !!params.dup, auto: false };
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
     const dupSet = H.idsMPDuplicadas();
+    const nAuto = S.eventos.filter(e => !e.anulado && H.eventoEsAuto(e)).length;
     function data() {
       let list = S.eventos.slice();
       if (!f.anulados) list = list.filter(e => !e.anulado);
+      if (!f.auto) list = list.filter(e => !H.eventoEsAuto(e));
       if (f.dup) list = list.filter(e => dupSet.has(e.id));
       if (f.tipo) list = list.filter(e => e.tipo === f.tipo);
       if (f.oficial) list = list.filter(e => (e.oficial === 'Sí') === (f.oficial === 'si'));
@@ -2882,6 +2895,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         selectEl([['', 'Todo ejecutor'], ['__none', 'Sin ejecutor'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.desde = e.target.value; render(); } }),
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.hasta = e.target.value; render(); } }),
+        h('label', { class: 'checkbox', title: `${nAuto} eventos fueron importados desde el maestro. Por defecto se ocultan para ver sólo el registro manual.` }, h('input', { type: 'checkbox', checked: f.auto ? true : false, onchange: e => { f.auto = e.target.checked; render(); } }), `Ver importados${nAuto ? ` (${nAuto})` : ''}`),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.dup ? true : false, onchange: e => { f.dup = e.target.checked; render(); } }), 'Solo duplicadas'),
         h('div', { class: 'tb-spacer' }),
