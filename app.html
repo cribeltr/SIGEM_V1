@@ -1956,6 +1956,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     if (!data || !data.__v) return { ok: false, error: 'Archivo no válido (falta __v).' };
     state = migrate(data);
     normalizarEquipos();
+    reconstruirCiclos();
     state.__userActions = state.__userActions || 0;
     save();
     UI.onChange();
@@ -2065,38 +2066,42 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
   // ==========================================================================
   // Carga o inicializa el state, reconstruye ciclos desde los eventos seed,
   // cierra los que correspondan, recalcula estados y normaliza. Devuelve el state.
+  // Reconstruye los ciclos correctivos desde los eventos (solicitud abre ciclo;
+  // reparación/recepción/visita correctiva "operativo" lo cierran). Solo actúa si
+  // NO hay ciclos — caso típico de un backup importado. Idempotente.
+  function reconstruirCiclos() {
+    if (!state.ciclos) state.ciclos = [];
+    if (state.ciclos.length > 0) return 0;
+    if (state.counters.ciclo == null) state.counters.ciclo = 1;
+    let n = 0;
+    state.eventos.forEach(ev => {
+      if (ev.tipo === 'Solicitud de trabajo' && ev.folio && !ev.anulado && !state.ciclos.find(c => c.folio === ev.folio)) {
+        state.ciclos.push({ folio: ev.folio, inv: ev.inv, fechaApertura: ev.fecha, fechaCierre: null, estado: 'abierto', descripcionInicial: ev.obs || '', ingenieroAsignado: ev.ejecutor || null, id: state.counters.ciclo++ });
+        n++;
+      }
+    });
+    state.eventos.forEach(ev => {
+      if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo' && ev.folio && !ev.anulado) {
+        const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
+        if (c) { c.estado = 'cerrado'; c.fechaCierre = ev.fecha; }
+      }
+    });
+    return n;
+  }
+
   function bootstrapDatos() {
     state = load();
     if (state) {
-      const cambios = limpiarEfectosAnulados();
+      let cambios = limpiarEfectosAnulados();
+      cambios += reconstruirCiclos();          // reconstruye ciclos si el backup no los trae
       if (cambios > 0) {
         save({ internal: true });
-        UI.notify(`Migración: ${cambios} inconsistencia${cambios > 1 ? 's' : ''} de versiones previas corregida${cambios > 1 ? 's' : ''}.`, 'success');
+        UI.notify(`Migración: ${cambios} ajuste${cambios > 1 ? 's' : ''} de consistencia aplicado${cambios > 1 ? 's' : ''}.`, 'success');
       }
     }
     if (!state) {
       state = init();
-      // Reconstruir ciclos desde eventos seed (Solicitud de trabajo con folio)
-      state.eventos.forEach(ev => {
-        if (ev.tipo === 'Solicitud de trabajo' && ev.folio) {
-          if (!state.ciclos.find(c => c.folio === ev.folio)) {
-            state.ciclos.push({
-              folio: ev.folio, inv: ev.inv, fechaApertura: ev.fecha,
-              fechaCierre: null, estado: 'abierto',
-              descripcionInicial: ev.obs || '', ingenieroAsignado: ev.ejecutor || null,
-              id: state.counters.ciclo++
-            });
-          }
-        }
-      });
-      // Cerrar ciclos cuyo evento de cierre dejó operativo
-      state.eventos.forEach(ev => {
-        if ((ev.tipo === 'Reparación' || ev.tipo === 'Recepción' || (ev.tipo === 'Visita técnica' && ev.tipoVisita === 'correctiva')) && ev.estado === 'operativo' && ev.folio) {
-          const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
-          if (c) { c.estado = 'cerrado'; c.fechaCierre = ev.fecha; }
-        }
-      });
-      // Recalcular estado de cada equipo
+      reconstruirCiclos();
       state.equipos.forEach(recalcEstadoEquipo);
       save({ internal: true });
     }
@@ -2117,7 +2122,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
-    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, bootstrapDatos,
+    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, bootstrapDatos,
     // utilidades
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
