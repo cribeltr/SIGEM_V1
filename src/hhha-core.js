@@ -1267,8 +1267,12 @@
     ev.obs = cambios.obs;
     ev.ejecutor = cambios.ejecutor;
     ev.oficial = cambios.oficial;
+    // Campos extra informativos (N° cotización, OC, empresa, técnico, folio, etc.).
+    // No se tocan 'estado'/'resultado' aquí: cambian el estado del equipo y se editan por su flujo.
+    CAMPOS_EXTRA_EVENTO.forEach(k => { if (k !== 'estado' && k !== 'resultado' && (k in cambios)) ev[k] = cambios[k] || null; });
     ev.ts = new Date().toISOString();
     save();
+    UI.onChange();
     return { ok: true };
   }
 

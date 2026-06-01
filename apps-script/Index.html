@@ -1773,8 +1773,12 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     ev.obs = cambios.obs;
     ev.ejecutor = cambios.ejecutor;
     ev.oficial = cambios.oficial;
+    // Campos extra informativos (N° cotización, OC, empresa, técnico, folio, etc.).
+    // No se tocan 'estado'/'resultado' aquí: cambian el estado del equipo y se editan por su flujo.
+    CAMPOS_EXTRA_EVENTO.forEach(k => { if (k !== 'estado' && k !== 'resultado' && (k in cambios)) ev[k] = cambios[k] || null; });
     ev.ts = new Date().toISOString();
     save();
+    UI.onChange();
     return { ok: true };
   }
 
@@ -2309,7 +2313,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b10';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b11';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2674,7 +2678,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('b', { style: { fontSize: '12px' } }, H.etiquetaTipoEvento(e)),
         e.resultado ? h('span', { class: 'mono', style: { fontSize: '11px' } }, e.resultado) : null,
         e.anulado ? h('span', { class: 'tag' }, 'anulado') : (e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador'))),
-      h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, [e.ejecutor, e.folio].filter(Boolean).join(' · ') || '—'),
+      h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, [e.ejecutor, e.folio && ('Folio ' + e.folio)].filter(Boolean).join(' · ') || '—'),
+      (() => { const x = []; if (e.nCotiz) x.push('Cotización ' + e.nCotiz); if (e.nOC) x.push('OC ' + e.nOC); if (e.empresa) x.push(e.empresa); if (e.tecnico) x.push('Téc. ' + e.tecnico); if (e.nEnvio) x.push('Envío ' + e.nEnvio); return x.length ? h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px', color: 'var(--accent)' } }, x.join(' · ')) : null; })(),
       e.obs ? h('div', { class: 'm-txt', style: { fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' } }, e.obs) : null);
   }
   function tabResumen(eq) {
@@ -3115,7 +3120,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           cf.thF('inv', 'N° Inv.', e => e.inv), cf.thF('equipo', 'Equipo', e => e.equipo || '—'), cf.thF('servicio', 'Servicio', e => e.servicio || '—'),
           cf.thF('freq', 'Freq', e => e.freq || '—'), cf.thF('prog', 'Prog.', progDe),
           cf.thF('resultado', 'Resultado', e => H.resultadoMPMes(e, y, m) || '—'), cf.thF('estadoMP', 'Estado MP', e => estLblMP(H.mpEstadoMes(e, y, m))),
-          cf.thF('resp', 'Responsable', e => { const a = (S.asignacionesMP || {})[keyMes()] || {}; return a[e.inv] || 'sin asignar'; }), h('th', { class: 'shrink' }, ''))),
+          cf.thF('encargado', 'Encargado', e => H.encargadoDe(e) || '—'),
+          cf.thF('resp', 'Responsable MP', e => { const a = (S.asignacionesMP || {})[keyMes()] || {}; return a[e.inv] || 'sin asignar'; }), h('th', { class: 'shrink' }, ''))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: mpSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? mpSel.add(e.inv) : mpSel.delete(e.inv); updBulk(); tr.classList.toggle('sel', ev.target.checked); } });
           const r = H.resultadoMPMes(e, y, m);
@@ -3126,6 +3132,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
             h('td', { class: 'mono' }, (e.registro && e.registro[MESES[m]] && e.registro[MESES[m]].P) || (e.prog || {})[MESES[m]] || '—'),
             h('td', {}, r ? h('span', { class: 'pill ' + mpResPillCls(r) }, r) : h('span', { class: 'faint' }, '—')),
             h('td', {}, mpEstadoBadge(e, y, m)),
+            h('td', { class: 'muted' }, H.encargadoDe(e) || h('span', { class: 'faint' }, '—')),
             h('td', {}, selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], asig[e.inv] || '', { onclick: ev => ev.stopPropagation(), onchange: ev => { S.asignacionesMP = S.asignacionesMP || {}; S.asignacionesMP[km] = S.asignacionesMP[km] || {}; if (ev.target.value) S.asignacionesMP[km][e.inv] = ev.target.value; else delete S.asignacionesMP[km][e.inv]; H.save(); } })),
             h('td', {}, h('button', { class: 'btn sm primary', onclick: ev => { ev.stopPropagation(); formMP(e.inv, H.fechaSugeridaMP(y, m)); } }, 'MP')));
           return tr;
@@ -3415,14 +3422,31 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     openDrawer({ title: 'Nuevo evento', wide: true, body, footer: [h('span', {})] });
     build();
   }
+  // Campos extra (editables) según el tipo de evento — para ver/registrar N° cotización, OC, empresa, etc.
+  const EXTRA_FIELDS_BY_TIPO = {
+    'Solicitud de trabajo': [['folio', 'N° Informe / Folio']],
+    'Visita técnica': [['empresa', 'Empresa'], ['tecnico', 'Técnico'], ['folio', 'N° Informe / Folio']],
+    'Orden de Compra': [['nCotiz', 'N° Cotización'], ['nOC', 'N° OC'], ['empresa', 'Empresa'], ['folioInformeTD', 'Folio informe (TD)'], ['folio', 'N° Informe / Folio']],
+    'Envío a servicio técnico': [['empresa', 'Empresa ST'], ['nEnvio', 'N° Envío'], ['folio', 'N° Informe / Folio']],
+    'Recepción': [['nEnvio', 'N° envío original'], ['folioGuia', 'Folio guía despacho'], ['folio', 'N° Informe / Folio']],
+    'Reparación': [['repuestos', 'Repuestos'], ['folio', 'N° Informe / Folio']]
+  };
   function formEditarEvento(e) {
+    const eq = H.findEquipo(e.inv) || {};
     const fecha = h('input', { type: 'date', value: e.fecha || '' });
     const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], e.ejecutor || '');
     const oficial = selectEl([['No', 'Borrador'], ['Sí', 'Oficial']], e.oficial || 'No');
     const obs = h('textarea', {}, e.obs || '');
+    const extraInputs = {};
+    const extraFields = (EXTRA_FIELDS_BY_TIPO[e.tipo] || []).map(([k, lbl]) => { const inp = h('input', { type: 'text', value: e[k] || '' }); extraInputs[k] = inp; return field(lbl, inp); });
+    const estadoNota = e.estado ? h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '4px' } }, `Estado del equipo por este evento: ${e.estado}. (El estado se cambia registrando un nuevo evento.)`) : null;
     openDrawer({
-      title: 'Editar evento · ' + e.tipo, body: h('div', {}, h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Oficial', oficial)), field('Observación', obs)),
-      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: () => { H.editarEvento(e, { fecha: fecha.value, obs: obs.value, ejecutor: ejecutor.value, oficial: oficial.value }); toast('Evento actualizado', 'success'); closeDrawer(); } }, 'Guardar')]
+      title: 'Editar evento · ' + e.tipo, wide: true,
+      body: h('div', {}, eqMini(eq),
+        h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Oficial', oficial)),
+        extraFields.length ? h('div', { class: 'grid-2' }, ...extraFields) : null,
+        field('Observación / informe', obs), estadoNota),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: () => { const cambios = { fecha: fecha.value, obs: obs.value, ejecutor: ejecutor.value, oficial: oficial.value }; for (const k in extraInputs) cambios[k] = extraInputs[k].value; H.editarEvento(e, cambios); toast('Evento actualizado', 'success'); closeDrawer(); } }, 'Guardar')]
     });
   }
   function formAnularEvento(e) {
@@ -3614,7 +3638,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
       ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Configuración', () => go('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
-      ['Exportar backup JSON', () => { closeCmdk(); backupExport(); }, '⭳'], ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
+      ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
     function render(q) {
       cmdkItems = []; clear(listEl); cmdkIdx = 0;
@@ -3772,6 +3796,14 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       name: 'Bitácora', hidden: false, rows: [
         ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'],
         ...S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
+      ]
+    });
+    // Correctivos: eventos no-MP con su detalle (N° informe, cotización, OC, empresa…), para consultar rápido.
+    const TIPOS_CORR = ['Solicitud de trabajo', 'Visita técnica', 'Orden de Compra', 'Envío a servicio técnico', 'Recepción', 'Reparación'];
+    sheets.push({
+      name: 'Correctivos', hidden: false, rows: [
+        ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Estado equipo', 'N° Informe / Folio', 'N° Cotización', 'N° OC', 'Empresa', 'Técnico', 'N° Envío', 'Ejecutor', 'Observación'],
+        ...S.eventos.filter(e => !e.anulado && TIPOS_CORR.includes(e.tipo)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', e.servicio || '', H.etiquetaTipoEvento(e), e.estado || '', e.folio || '', e.nCotiz || '', e.nOC || '', e.empresa || '', e.tecnico || '', e.nEnvio || '', e.ejecutor || '', e.obs || ''])
       ]
     });
     // MP por mes (resumen anual de cumplimiento) — espejo de la vista Cumplimiento › Por mes
