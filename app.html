@@ -388,6 +388,58 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
   .search-pill { min-width: 0; }
 }
 
+/* ============================================================================
+ * Pulido UX · micro-animaciones · responsive (v2)
+ * ==========================================================================*/
+@keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cmdk-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.985); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  #view > * { animation: view-in .22s cubic-bezier(.2, .6, .2, 1) both; }
+  .kpi, .alert-card, .wl-item { transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease; }
+  .kpi:hover, .alert-card:hover, .wl-item:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  table.dense tbody tr { transition: background .1s ease; }
+  .nav-item { transition: background .12s ease, color .12s ease; }
+  .btn { transition: background .1s ease, border-color .1s ease, transform .06s ease, box-shadow .12s ease; }
+  .pill, .tag, .badge-count, .seg button { transition: background .12s, color .12s; }
+  .cmdk-modal { animation: cmdk-in .16s ease both; }
+  .tabs button { transition: color .12s, border-color .12s; }
+  .drawer .d-bd > * { animation: view-in .2s ease both; }
+}
+
+/* navegación: barra de acento del item activo */
+.nav-item { position: relative; }
+.nav-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.btn:hover { box-shadow: 0 1px 2px rgba(20, 23, 28, .07); }
+.btn.primary:hover { box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 32%, transparent); }
+.btn:focus-visible, .nav-item:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+table.dense thead th.sortable:hover { background: var(--surface-3); }
+
+/* filterbar: los controles toman el ancho de su contenido (no se estiran) */
+.filterbar .field { flex: 0 0 auto; }
+.filterbar select, .filterbar input[type=date], .filterbar input[type=text] { width: auto; }
+.filterbar input[type=search] { min-width: 180px; }
+
+.rail-scrim { display: none; }
+
+@media (max-width: 980px) {
+  .topbar .btn.tb-data { display: none; } /* Excel/Backup/Import quedan en Configuración */
+}
+@media (max-width: 760px) {
+  .topbar { gap: 6px; padding: 0 8px; }
+  .topbar .s-hide { display: none; }
+  .tb-title { font-size: 13px; }
+  .view { padding: 11px 10px 40px; }
+  .drawer, .drawer.wide { width: 100%; max-width: 100%; }
+  .kpi .k-val { font-size: 22px; }
+  .alert-strip, .kpi-row { gap: 8px; }
+  .app.rail-open .rail-scrim { display: block; position: fixed; inset: 0; z-index: 54; background: rgba(8, 10, 14, .45); animation: fade-in .15s ease; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
 </style>
 <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('sigem_theme')||'light')}catch(e){}</script>
 </head>
@@ -2246,7 +2298,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
-  function go(v, p) { view = v; params = p || {}; kbList = null; location.hash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : ''); renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0); }
+  function go(v, p) { view = v; params = p || {}; kbList = null; location.hash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : ''); const a = document.querySelector('.app'); if (a) a.classList.remove('rail-open'); renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0); }
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
@@ -3203,7 +3255,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function openCmdk() {
     const input = h('input', { type: 'text', placeholder: 'Buscar equipo o acción…  (Esc para cerrar)' });
     const listEl = h('div', { class: 'cmdk-list' });
-    cmdkEl = h('div', { class: 'cmdk' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
+    cmdkEl = h('div', { class: 'cmdk cmdk-modal' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
     const actions = [
       ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
       ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Conciliación', () => go('conciliacion'), '⤳'],
@@ -3687,21 +3739,22 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     H.bootstrapDatos();
 
     const app = h('div', { class: 'app' },
+      h('div', { class: 'rail-scrim', onclick: () => document.querySelector('.app').classList.remove('rail-open') }),
       h('aside', { class: 'rail' },
         h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'S'), h('span', {}, 'SIGEM', h('br'), h('small', {}, 'Equipos críticos')))),
         railNav,
         h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'), h('span', { class: 'u-name' }, 'Cristian'))),
       h('div', { class: 'main' },
         h('header', { class: 'topbar' },
-          h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => document.querySelector('.app').classList.toggle('rail-collapsed') }, svg(ic.menu, 17)),
+          h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => { const a = document.querySelector('.app'); if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) a.classList.toggle('rail-open'); else a.classList.toggle('rail-collapsed'); } }, svg(ic.menu, 17)),
           h('div', { class: 'tb-title', id: 'tb-title' }, 'Cola de trabajo'),
           h('div', { class: 'tb-spacer' }),
-          h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted' }, 'Buscar…'), h('span', { class: 'kbd' }, '⌘K')),
-          h('span', { class: 'pill muted', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
+          h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted s-hide' }, 'Buscar…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
+          h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
           h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
-          h('button', { class: 'btn sm', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
-          h('button', { class: 'btn sm', title: 'Backup JSON', onclick: backupExport }, 'Backup'),
-          h('button', { class: 'btn sm ghost', title: 'Importar backup', onclick: backupImport }, svg(ic.up, 15)),
+          h('button', { class: 'btn sm tb-data', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
+          h('button', { class: 'btn sm tb-data', title: 'Backup JSON', onclick: backupExport }, 'Backup'),
+          h('button', { class: 'btn sm ghost tb-data', title: 'Importar backup', onclick: backupImport }, svg(ic.up, 15)),
         ),
         h('main', { class: 'view', id: 'view' })));
     mount(document.getElementById('root'), app);

@@ -133,7 +133,7 @@
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
-  function go(v, p) { view = v; params = p || {}; kbList = null; location.hash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : ''); renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0); }
+  function go(v, p) { view = v; params = p || {}; kbList = null; location.hash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : ''); const a = document.querySelector('.app'); if (a) a.classList.remove('rail-open'); renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0); }
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
@@ -1090,7 +1090,7 @@
   function openCmdk() {
     const input = h('input', { type: 'text', placeholder: 'Buscar equipo o acción…  (Esc para cerrar)' });
     const listEl = h('div', { class: 'cmdk-list' });
-    cmdkEl = h('div', { class: 'cmdk' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
+    cmdkEl = h('div', { class: 'cmdk cmdk-modal' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
     const actions = [
       ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
       ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Conciliación', () => go('conciliacion'), '⤳'],
@@ -1574,21 +1574,22 @@
     H.bootstrapDatos();
 
     const app = h('div', { class: 'app' },
+      h('div', { class: 'rail-scrim', onclick: () => document.querySelector('.app').classList.remove('rail-open') }),
       h('aside', { class: 'rail' },
         h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'S'), h('span', {}, 'SIGEM', h('br'), h('small', {}, 'Equipos críticos')))),
         railNav,
         h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'), h('span', { class: 'u-name' }, 'Cristian'))),
       h('div', { class: 'main' },
         h('header', { class: 'topbar' },
-          h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => document.querySelector('.app').classList.toggle('rail-collapsed') }, svg(ic.menu, 17)),
+          h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => { const a = document.querySelector('.app'); if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) a.classList.toggle('rail-open'); else a.classList.toggle('rail-collapsed'); } }, svg(ic.menu, 17)),
           h('div', { class: 'tb-title', id: 'tb-title' }, 'Cola de trabajo'),
           h('div', { class: 'tb-spacer' }),
-          h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted' }, 'Buscar…'), h('span', { class: 'kbd' }, '⌘K')),
-          h('span', { class: 'pill muted', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
+          h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted s-hide' }, 'Buscar…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
+          h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
           h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
-          h('button', { class: 'btn sm', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
-          h('button', { class: 'btn sm', title: 'Backup JSON', onclick: backupExport }, 'Backup'),
-          h('button', { class: 'btn sm ghost', title: 'Importar backup', onclick: backupImport }, svg(ic.up, 15)),
+          h('button', { class: 'btn sm tb-data', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
+          h('button', { class: 'btn sm tb-data', title: 'Backup JSON', onclick: backupExport }, 'Backup'),
+          h('button', { class: 'btn sm ghost tb-data', title: 'Importar backup', onclick: backupImport }, svg(ic.up, 15)),
         ),
         h('main', { class: 'view', id: 'view' })));
     mount(document.getElementById('root'), app);
