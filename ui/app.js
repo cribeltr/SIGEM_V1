@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b12';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b13';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1504,7 +1504,7 @@
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['SIGEM · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Las hojas de trabajo (Inventario, Plan anual MP, Pendientes, Bitácora, Hoja de ruta) reflejan los datos al momento de sincronizar.'],
+        ['Las hojas de trabajo (Inventario, Plan anual MP, Hoja de ruta, Pendientes, Bitácora, Correctivos, MP por mes) reflejan los datos al momento de sincronizar.'],
         ['Los datos del sistema están en hojas ocultas (que empiezan con "_"). No las borres ni las edites.'], [],
         ['LEYENDA · RESULTADO MP'], ['Si', 'MP realizada'],
         ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc]), ['FS', 'Fuera de servicio'], ['NU', 'No ubicado'], ['Baja', 'Dado de baja'], ['No', 'No realizada'],

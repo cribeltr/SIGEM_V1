@@ -50,8 +50,10 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
   pendiente, dar de baja. La **Matriz MP** es editable por celda (click → registra MP).
 - **Pendientes** — tabla por estado (activos/no iniciado/en proceso/resueltos), drawer
   con tareas atómicas y seguimientos.
-- **Ciclos** — correctivos abiertos/cerrados/anulados.
-- **Eventos** — bitácora global; oficializar / editar / anular (con reversión de efectos).
+- **Eventos** — bitácora global con selector **Bitácora · Correctivos**: la
+  bitácora permite oficializar / editar / anular (con reversión de efectos);
+  **Correctivos** lista los ciclos abiertos/cerrados/anulados. (Los ciclos de un
+  equipo también están en su ficha, pestaña *Ciclos*.)
 - **Asignaciones MP** — por mes: asignar responsable, descargar/subir plantilla `.xlsx`.
 - **Conciliación** — importar maestro Excel, auto-completar y resolver diferencias
   (aceptar maestro / mantener / manual / posponer, individual y en lote).
@@ -187,18 +189,18 @@ faltaba** en la UI, sin cambiar el diseño:
   Recepción (*N° envío original, Folio guía*), MP (*Ejecutor 2*), Envío (*Ejecutor*).
 - **Exportar Excel** → "Cuaderno de operaciones" autónomo, pensado para usarse **sin
   la aplicación**:
-  - **Inicio** — portada con instrucciones de uso y **leyenda de códigos** (estados,
-    resultados de MP con la descripción de cada causal C1–C8, tipos de pendiente,
-    códigos de programación).
-  - **Tablero** — indicadores estáticos + **estado por servicio** (equipos, no
-    operativos, % MP del mes, pendientes).
-  - **Hoja de ruta MP · mes** — MP programadas del mes para **imprimir y registrar a
-    mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Observación*.
-  - **Plan anual MP** — carta gantt P/R por mes (encabezados de mes combinados).
-  - **Inventario** — catálogo completo con estado, días en estado, pendientes y ciclo.
-  - **Pendientes** — con columnas (✎) *Avance · Nuevo estado · Fecha* para seguimiento offline.
-  - **Ciclos correctivos** y **Bitácora** (historial; marca Manual/Automático).
-  - Todas las tablas con **autofiltro** y títulos combinados.
+  - **Inicio** — instrucciones de uso y **leyenda de códigos** (resultado de MP con la
+    descripción de cada causal C1–C8, y estados del equipo).
+  - **Inventario** — catálogo completo con estado, días en estado, encargado y
+    pendientes abiertos.
+  - **Plan anual MP · año** — P/R (programado/realizado) por mes de cada equipo.
+  - **Hoja de ruta · mes** — MP programadas del mes para **imprimir y registrar a
+    mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Obs*.
+  - **Pendientes** — id, equipo, tipo, responsable, estado y fechas de compromiso.
+  - **Bitácora** — historial de eventos (registro manual; los importados se omiten).
+  - **Correctivos** — detalle de cada evento correctivo (N° informe, cotización, OC,
+    empresa, técnico, envío…) para consulta rápida.
+  - **MP por mes** — resumen anual de cumplimiento (espejo de *Cumplimiento › Por mes*).
 
 ## Notas
 - Mismo `STORAGE_KEY` que el núcleo (`hhha_v1_data`): comparte datos con cualquier
