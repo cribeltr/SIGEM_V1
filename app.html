@@ -2538,18 +2538,30 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function tabMatriz(eq) {
     const yearSel = selectEl([YEAR + 1, YEAR, YEAR - 1, YEAR - 2].map(y => [y, y]), params.year || YEAR, { onchange: e => { params.year = +e.target.value; mount($('#view'), VIEWS.equipo()); } });
     const yr = params.year || YEAR;
-    return h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Matriz de mantención preventiva'), h('div', { class: 'tb-spacer' }), field(null, yearSel)),
-      h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, ''), ...MESES.map(m => h('th', { class: 'num' }, m)))),
-        h('tbody', {},
-          h('tr', {}, h('td', { class: 'muted' }, 'Programado (P)'), ...MESES.map(m => { const p = (eq.prog || {})[m]; return h('td', { class: 'num mpcell ' + (p ? 'x' : '') }, p || '·'); })),
-          h('tr', {}, h('td', { class: 'muted' }, 'Resultado (R)'), ...MESES.map((m, i) => {
-            const r = H.resultadoMPMes(eq, yr, i);
-            return h('td', { class: 'num mpcell ' + mpResultClass(r), onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·');
-          }))
-      )))),
-      h('div', { class: 's-bd' }, h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Click en una celda de Resultado para registrar/editar la MP de ese mes. Códigos: Si=hecha · C1–C8=reprogramación · FS/NU/No=falla · Baja.')));
+    const obsList = H.getState().eventos.filter(e => e.inv === eq.inv && !e.anulado && e.tipo === 'Mantención preventiva' && (e.obs || '').trim() && e.fecha && e.fecha.startsWith(String(yr))).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    return h('div', {},
+      h('div', { class: 'section' },
+        h('div', { class: 's-hd' }, h('h3', {}, 'Matriz de mantención preventiva'), h('div', { class: 'tb-spacer' }), field(null, yearSel)),
+        h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, h('th', {}, ''), ...MESES.map(m => h('th', { class: 'num' }, m)))),
+          h('tbody', {},
+            h('tr', {}, h('td', { class: 'muted' }, 'Programado (P)'), ...MESES.map(m => { const p = (eq.prog || {})[m]; return h('td', { class: 'num mpcell ' + (p ? 'x' : '') }, p || '·'); })),
+            h('tr', {}, h('td', { class: 'muted' }, 'Resultado (R)'), ...MESES.map((m, i) => {
+              const r = H.resultadoMPMes(eq, yr, i);
+              const ev = H.eventoMPMes(eq.inv, yr, i);
+              const tieneObs = ev && (ev.obs || '').trim();
+              const tip = ev ? (`${m} ${yr} · ${ev.resultado || 'Si'} · ${ev.ejecutor || 'sin ejecutor'}` + (tieneObs ? `\nObs: ${ev.obs}` : '')) : (r ? `${m}: ${r}` : `${m}: sin registro`);
+              return h('td', { class: 'num mpcell ' + mpResultClass(r), title: tip, onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·', tieneObs ? h('sup', { style: { color: 'var(--accent)' } }, '✎') : null);
+            }))
+        )))),
+        h('div', { class: 's-bd' }, h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Click en una celda de Resultado para registrar/editar la MP de ese mes. La ✎ indica que esa MP tiene observación. Códigos: Si=hecha · C1–C8=reprogramación · FS/NU/No=falla · Baja.'))),
+      h('div', { class: 'section' },
+        h('div', { class: 's-hd' }, h('h3', {}, `Observaciones de MP · ${yr}`), h('span', { class: 's-sub' }, obsList.length + ' con nota')),
+        h('div', { class: 's-bd flush' }, obsList.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Fecha'), h('th', {}, 'Resultado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Observación'))),
+          h('tbody', {}, ...obsList.map(e => h('tr', { title: 'Clic para editar el evento', onclick: () => editarEvento(e) },
+            h('td', {}, fmtFecha(e.fecha)), h('td', { class: 'mono' }, e.resultado || '—'), h('td', { class: 'muted' }, e.ejecutor || '—'), h('td', { class: 'wrap' }, e.obs))))))
+          : h('div', { class: 'empty' }, 'Sin observaciones registradas en las MP de este año'))));
   }
   function miniGantt(eq, yr) {
     return h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(12,1fr)', gap: '3px' } }, ...MESES.map((m, i) => {
@@ -2780,13 +2792,14 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   };
   function eventosTable(list, compact) {
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Fecha'), !compact ? h('th', {}, 'N° Inv.') : null, h('th', {}, 'Tipo'), h('th', {}, 'Resultado'), h('th', {}, 'Estado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Folio'), h('th', {}, ''), h('th', { class: 'shrink' }, ''))),
+      h('thead', {}, h('tr', {}, h('th', {}, 'Fecha'), !compact ? h('th', {}, 'N° Inv.') : null, h('th', {}, 'Tipo'), h('th', {}, 'Resultado'), h('th', {}, 'Estado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Folio'), h('th', {}, 'Observación'), h('th', {}, ''), h('th', { class: 'shrink' }, ''))),
       h('tbody', {}, ...list.map(e => h('tr', { class: e.anulado ? '' : '', style: e.anulado ? { opacity: .5 } : null },
         h('td', {}, fmtFecha(e.fecha)),
         !compact ? h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv) : null,
         h('td', {}, H.etiquetaTipoEvento(e)), h('td', { class: 'mono' }, e.resultado || '—'),
         h('td', {}, e.estado ? estadoPill(e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico')) : '—'),
         h('td', { class: 'muted' }, e.ejecutor || '—'), h('td', { class: 'mono faint' }, e.folio || '—'),
+        h('td', { class: 'wrap', title: e.obs || '' }, e.obs ? e.obs : h('span', { class: 'faint' }, '—')),
         h('td', {}, e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador')),
         h('td', {}, e.anulado ? h('span', { class: 'faint', title: e.motivoAnulacion }, 'anulado') : eventMenu(e))
       )))));
