@@ -33,10 +33,15 @@ function doGet(e) {
       return _json({ ok: true, dataB64: readData(), updated: readMeta('updated') });
     }
     // Por defecto: SERVIR LA APP (verla desde cualquier parte con la URL .../exec).
-    return HtmlService.createHtmlOutputFromFile('Index')
-      .setTitle('SIGEM · Equipos Biomédicos Críticos')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    try {
+      return HtmlService.createHtmlOutputFromFile('Index')
+        .setTitle('SIGEM · Equipos Biomédicos Críticos')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    } catch (e2) {
+      return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif">Falta el archivo <b>Index.html</b></h2>' +
+        '<p style="font-family:sans-serif">Crea un archivo HTML llamado <b>Index</b> en este proyecto de Apps Script y pega el contenido de <code>app.html</code>. Luego reimplementa. Detalle: ' + e2 + '</p>');
+    }
   } catch (err) { return _json({ ok: false, error: String(err) }); }
 }
 
@@ -45,6 +50,14 @@ function doGet(e) {
 function apiRead() { return { ok: true, dataB64: readData(), updated: readMeta('updated') }; }
 function apiSaveData(dataB64) { writeData(String(dataB64 || '')); writeMeta('updated', new Date().toISOString()); return { ok: true, ts: new Date().toISOString() }; }
 function apiSaveSheets(sheets) { writeSheets(sheets || []); hideSystemSheets(); return { ok: true }; }
+// Guarda en una sola llamada: estado del sistema (oculto) + hojas legibles visibles.
+function apiSave(payload) {
+  payload = payload || {};
+  if (typeof payload.dataB64 === 'string') { writeData(payload.dataB64); writeMeta('updated', new Date().toISOString()); }
+  if (Array.isArray(payload.sheets)) writeSheets(payload.sheets);
+  hideSystemSheets();
+  return { ok: true, ts: new Date().toISOString() };
+}
 
 function doPost(e) {
   try {

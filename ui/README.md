@@ -85,15 +85,19 @@ la app.
 4. En SIGEM → **Configuración**: pega la URL (+ token si lo usaste), **Probar
    conexión**, activa *Sincronización automática* y **Guardar configuración**.
 
-**Cómo funciona**:
+**Cómo funciona** (el Google Sheet es el almacén/respaldo, no un backup aparte):
 - El estado completo se guarda **comprimido en una hoja oculta** `_SIGEM_DATA`
   (las hojas de sistema empiezan con `_` y se ocultan automáticamente).
-- **Generar hojas de trabajo** escribe hojas legibles (Inicio/leyenda, Inventario,
-  Plan anual MP, Hoja de ruta del mes, Pendientes, Bitácora) para trabajar con el
-  archivo aunque no tengas la app.
-- Con *Sincronización automática*: al abrir, **trae** los datos desde la hoja; al
-  cambiar algo, **sube** (con un pequeño retardo). También hay botones manuales
-  *Traer* / *Guardar ahora* / *Generar hojas* y respaldo JSON local.
+- En la **misma** sincronización se escriben además hojas **legibles** (Inicio/leyenda,
+  Inventario, Plan anual MP, Hoja de ruta del mes, Pendientes, Bitácora) → así ves
+  y trabajas los datos en el Sheet aunque no tengas la app.
+- Con *Sincronización automática*: al abrir **trae** los datos; al cambiar algo
+  **sube todo** (datos + hojas) con un pequeño retardo. También está *Guardar ahora*
+  y *Traer datos* en **Configuración**.
+- El **maestro** (importar Excel), la **plantilla de asignación** (descargar/subir) y
+  la **resolución de conflictos** están en **Configuración** (ya no hay vista
+  "Conciliación"; los conflictos por equipo también se ven en la ficha del equipo).
+- El respaldo JSON queda como copia de emergencia opcional.
 ### Verlo desde cualquier parte (servido por el propio Apps Script) — recomendado
 
 Para abrir SIGEM desde cualquier dispositivo con solo una URL y **sin problemas de

@@ -2329,7 +2329,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
     { id: 'asignaciones', label: 'Asignaciones MP', icon: 'asignaciones' },
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
-    { id: 'conciliacion', label: 'Conciliación', icon: 'conciliacion' },
     { id: 'configuracion', label: 'Configuración', icon: 'config' }
   ];
   let view = 'inicio', params = {};
@@ -2383,7 +2382,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       alert(recordHoy.length ? 'med' : 'lo', recordHoy.length, 'Recordatorios hoy', () => go('pendientes', { record: 1 }), 'seguimientos para hoy'),
       alert('lo', sinProgMP.length, 'Sin programación MP', () => go('equipos', { sinProg: 1 }), 'equipos sin MP anual'),
       alert('lo', borradores.length, 'Borradores', () => go('eventos', { oficial: 'No' }), 'sin oficializar'),
-      alert('lo', conf.length, 'Conflictos', () => go('conciliacion'), 'con el maestro')
+      alert('lo', conf.length, 'Conflictos', () => go('configuracion'), 'con el maestro')
     ));
 
     // MP del mes — barra de cumplimiento
@@ -2964,9 +2963,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         seg,
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: sinAsig ? true : false, onchange: e => { sinAsig = e.target.checked; mpSel.clear(); render(); } }), 'Sin asignar'),
         h('div', { class: 'tb-spacer' }),
-        bulkAsig,
-        h('button', { class: 'btn sm', onclick: () => descargarPlantilla(y, m) }, svg(ic.dl, 14), 'Plantilla'),
-        h('button', { class: 'btn sm', onclick: () => subirPlantilla(y, m) }, svg(ic.up, 14), 'Subir'), note),
+        bulkAsig, note),
       wrap);
     render(); return root;
   };
@@ -3084,26 +3081,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     render(); return root;
   };
 
-  // ---- CONCILIACIÓN -------------------------------------------------------
-  VIEWS.conciliacion = function () {
-    const S = H.getState();
-    const list = h('div', { class: 'row-list' });
-    const head = h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Conciliación con maestro Excel'), h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm primary', onclick: () => importarMaestro(render) }, svg(ic.up, 14), 'Importar maestro (.xlsx)')),
-      h('div', { class: 's-bd' }, h('div', { class: 'notice info' }, window.XLSX ? 'Importa el archivo con hojas PMP_AAAA y Registro_MP-AAAA. Se auto-completan celdas vacías y se listan las diferencias para resolver.' : '⚠ XLSX no disponible (sin conexión). La importación de Excel queda deshabilitada; el resto de la app funciona.')));
-    function render() {
-      const confs = (H.getState().conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
-      if (!confs.length) { mount(list, h('div', { class: 'empty' }, h('div', { class: 'big' }, '✓'), 'Sin conflictos pendientes')); return; }
-      const bulk = h('div', { class: 'filterbar' },
-        h('b', {}, `${confs.length} conflicto(s)`), h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => { confs.forEach(c => H.resolverConflicto(c, 'aceptar_maestro', null, { skipSave: true })); H.save(); toast('Todos aceptados (maestro)', 'success'); render(); } }, 'Aceptar todo (maestro)'),
-        h('button', { class: 'btn sm', onclick: () => { confs.forEach(c => H.resolverConflicto(c, 'mantener_programa', null, { skipSave: true })); H.save(); toast('Todos mantenidos', 'success'); render(); } }, 'Mantener todo'));
-      mount(list, bulk, ...confs.map(c => conflictoRow(c, render)));
-    }
-    render();
-    return h('div', { class: 'view-narrow' }, head, list);
-  };
+  // (La vista Conciliación se retiró: el maestro se importa desde Configuración y
+  // los conflictos se resuelven allí o en la pestaña "Conflictos" de cada equipo.)
   function conflictoRow(c, after) {
     const act = (accion, valor) => { H.resolverConflicto(c, accion, valor); toast('Conflicto resuelto', 'success'); after ? after() : scheduleRefresh(); };
     let body;
@@ -3299,7 +3278,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     cmdkEl = h('div', { class: 'cmdk cmdk-modal' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
     const actions = [
       ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
-      ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Conciliación', () => go('conciliacion'), '⤳'],
+      ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Configuración', () => go('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Exportar backup JSON', () => { closeCmdk(); backupExport(); }, '⭳'], ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
@@ -3381,21 +3360,16 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       this._markSync();
       return { ok: true, eventos: (obj.eventos || []).length, equipos: (obj.equipos || []).length };
     },
-    async pushData() {
+    // Guarda TODO en el Google Sheet: estado del sistema (oculto, comprimido) +
+    // hojas legibles visibles. Cada registro queda almacenado y visible en la hoja.
+    async push() {
       if (!window.LZString) return;
       const dataB64 = LZString.compressToBase64(H.exportarBackupJSON());
-      let j;
-      if (isGAS()) j = await gasCall('apiSaveData', dataB64);
-      else { if (!this.url) return; j = await (await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, dataB64 }), redirect: 'follow' })).json().catch(() => ({ ok: true })); }
-      if (j && j.ok === false) throw new Error(j.error || 'error al guardar');
-      this._markSync();
-    },
-    async pushSheets() {
       const sheets = cuadernoSheets();
       let j;
-      if (isGAS()) j = await gasCall('apiSaveSheets', sheets);
-      else { if (!this.url) throw new Error('Sin URL configurada'); j = await (await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, sheets }), redirect: 'follow' })).json().catch(() => ({ ok: true })); }
-      if (j && j.ok === false) throw new Error(j.error || 'error al escribir hojas');
+      if (isGAS()) j = await gasCall('apiSave', { dataB64, sheets });
+      else { if (!this.url) return; j = await (await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, dataB64, sheets }), redirect: 'follow' })).json().catch(() => ({ ok: true })); }
+      if (j && j.ok === false) throw new Error(j.error || 'error al guardar');
       this._markSync();
       return { ok: true, hojas: sheets.length };
     },
@@ -3410,7 +3384,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function scheduleCloudPush() {
     if (!Cloud.auto || !Cloud.connected || cloudApplying) return;
     clearTimeout(cloudTimer);
-    cloudTimer = setTimeout(() => { Cloud.pushData().then(() => refreshChrome()).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 4000);
+    cloudTimer = setTimeout(() => { Cloud.push().then(() => refreshChrome()).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 5000);
   }
 
   // Hojas de trabajo legibles que se escriben en el Google Sheet (para usar el
@@ -3477,55 +3451,75 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const autoIn = h('input', { type: 'checkbox', checked: Cloud.auto ? true : false });
     const status = h('div', { style: { fontSize: '12px' } });
     const setStatus = (msg, cls) => mount(status, h('span', { style: cls === 'err' ? { color: 'var(--noop)' } : cls === 'ok' ? { color: 'var(--op)' } : { color: 'var(--muted)' } }, msg));
-    const syncStatus = () => setStatus(Cloud.url ? ('Configurado · última sincronización: ' + (Cloud.lastSync ? new Date(Cloud.lastSync).toLocaleString('es-CL') : 'nunca')) : 'Sin configurar — los datos se guardan solo en este navegador.');
+    const syncStatus = () => setStatus(Cloud.connected ? ('Almacén activo · última sincronización: ' + (Cloud.lastSync ? new Date(Cloud.lastSync).toLocaleString('es-CL') : 'nunca')) : 'Sin conectar — los datos se guardan solo en este navegador.');
     syncStatus();
     const guardar = () => { Cloud.set(urlIn.value, tokIn.value, autoIn.checked); toast('Configuración guardada', 'success'); syncStatus(); refreshChrome(); };
+
+    // 1) Almacenamiento (Google Sheets) — el Sheet ES el respaldo
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, svg(ic.cloud, 16), h('h3', {}, 'Almacenamiento en Google Sheets')),
+      h('div', { class: 's-hd' }, svg(ic.cloud, 16), h('h3', {}, 'Almacenamiento (Google Sheets)')),
       h('div', { class: 's-bd' },
         Cloud.gas
-          ? h('div', { class: 'notice', style: { borderColor: 'color-mix(in srgb, var(--op) 35%, var(--border))', background: 'var(--op-bg)', color: 'color-mix(in srgb, var(--op) 80%, var(--text))' } }, '✓ Estás viendo SIGEM servido desde Apps Script. Los datos se guardan automáticamente en este Google Sheet (sin CORS y accesible desde cualquier parte con la URL). No necesitas configurar URL ni token.')
-          : h('div', { class: 'notice info' }, 'Conecta SIGEM con un Google Sheet mediante un Apps Script (Web App). El estado del sistema se guarda comprimido en una hoja OCULTA y se generan hojas de trabajo legibles para usar el archivo sin la app. Para verlo desde cualquier parte, pega este app.html en un archivo HTML "Index" del Apps Script (ver apps-script/Code.gs).'),
-        field('URL del Apps Script (termina en /exec)', urlIn),
-        field('Token compartido (opcional, debe coincidir con SHARED_TOKEN del script)', tokIn),
-        h('label', { class: 'checkbox', style: { marginTop: '8px' } }, autoIn, 'Sincronización automática: guardar cada cambio en Google Sheets'),
+          ? h('div', { class: 'notice', style: { borderColor: 'color-mix(in srgb, var(--op) 35%, var(--border))', background: 'var(--op-bg)', color: 'color-mix(in srgb, var(--op) 80%, var(--text))' } }, '✓ Servido desde Apps Script. Cada cambio se guarda automáticamente en este Google Sheet (es tu respaldo) y se escriben hojas legibles. Accesible desde cualquier parte con la URL.')
+          : h('div', { class: 'notice info' }, 'Conecta con un Google Sheet (Apps Script). El estado se guarda en una hoja oculta y, además, se escriben hojas legibles (Equipos, Pendientes, Bitácora, Plan anual…) para ver y trabajar los datos. Lo ideal: pega app.html en un archivo "Index" del Apps Script y abre la URL /exec.'),
+        Cloud.gas ? null : field('URL del Apps Script (termina en /exec)', urlIn),
+        Cloud.gas ? null : field('Token (opcional, igual a SHARED_TOKEN del script)', tokIn),
+        h('label', { class: 'checkbox', style: { marginTop: '8px' } }, autoIn, 'Sincronización automática: guardar cada cambio en el Sheet'),
         h('div', { class: 'btn-row', style: { marginTop: '12px' } },
-          h('button', { class: 'btn primary', onclick: guardar }, 'Guardar configuración'),
-          h('button', { class: 'btn', onclick: async () => { guardar(); setStatus('Probando conexión…'); try { await Cloud.test(); setStatus('Conexión correcta ✓', 'ok'); toast('Conexión correcta', 'success'); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Falló la conexión: ' + e.message, 'error'); } } }, 'Probar conexión')),
+          Cloud.gas ? null : h('button', { class: 'btn primary', onclick: guardar }, 'Guardar configuración'),
+          Cloud.gas ? null : h('button', { class: 'btn', onclick: async () => { guardar(); setStatus('Probando conexión…'); try { await Cloud.test(); setStatus('Conexión correcta ✓', 'ok'); toast('Conexión correcta', 'success'); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Falló la conexión: ' + e.message, 'error'); } } }, 'Probar conexión'),
+          h('button', { class: 'btn ' + (Cloud.gas ? 'primary' : ''), onclick: async () => { if (!Cloud.connected) return toast('Conecta el Sheet primero', 'error'); setStatus('Guardando en el Sheet…'); try { const r = await Cloud.push(); toast(`Guardado en Google Sheets (${r.hojas} hojas)`, 'success'); syncStatus(); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Error al guardar: ' + e.message, 'error'); } } }, svg(ic.up, 14), 'Guardar ahora'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Conecta el Sheet primero', 'error'); if (!window.confirm('Traer datos desde Google Sheets reemplaza lo de este navegador. ¿Continuar?')) return; try { const r = await Cloud.pull(); toast(r.empty ? 'La hoja aún no tiene datos' : `Traído · ${r.equipos} equipos · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (e) { toast('Error al traer: ' + e.message, 'error'); } } }, svg(ic.dl, 14), 'Traer datos')),
         h('div', { style: { marginTop: '12px' } }, status))));
+
+    // 2) Maestro y asignaciones MP (lo que antes estaba en Conciliación + plantillas)
+    let my = YEAR, mm = MONTH;
+    const confBox = h('div', {});
+    const renderConf = () => {
+      const cs = (H.getState().conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
+      if (!cs.length) { mount(confBox, h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Sin conflictos pendientes con el maestro.')); refreshChrome(); return; }
+      mount(confBox,
+        h('div', { class: 'btn-row', style: { margin: '0 0 8px' } },
+          h('b', {}, cs.length + ' conflicto(s)'), h('div', { class: 'tb-spacer' }),
+          h('button', { class: 'btn sm', onclick: () => { if (!window.confirm(`¿Aceptar el maestro en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'aceptar_maestro', null, { skipSave: true })); H.save(); toast('Resueltos (maestro)', 'success'); renderConf(); } }, 'Aceptar todo (maestro)'),
+          h('button', { class: 'btn sm', onclick: () => { if (!window.confirm(`¿Mantener el programa en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'mantener_programa', null, { skipSave: true })); H.save(); toast('Resueltos (programa)', 'success'); renderConf(); } }, 'Mantener todo')),
+        h('div', { class: 'row-list' }, ...cs.slice(0, 300).map(c => conflictoRow(c, renderConf))));
+    };
+    renderConf();
+    const selM = selectEl(MESES.map((x, i) => [i, MES_ESP(i)]), mm, { onchange: e => { mm = +e.target.value; } });
+    const selY = selectEl([YEAR + 1, YEAR, YEAR - 1].map(y => [y, y]), my, { onchange: e => { my = +e.target.value; } });
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Sincronización manual')),
+      h('div', { class: 's-hd' }, h('h3', {}, 'Maestro y asignaciones MP')),
       h('div', { class: 's-bd' },
-        h('div', { class: 'btn-row' },
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); if (!window.confirm('Traer los datos desde Google Sheets reemplazará lo que tienes en este navegador. ¿Continuar?')) return; try { const r = await Cloud.pull(); toast(r.empty ? 'La hoja aún no tiene datos' : `Traído · ${r.equipos} equipos · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (e) { toast('Error al traer: ' + e.message, 'error'); } } }, svg(ic.dl, 14), 'Traer datos (descargar)'),
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); try { await Cloud.pushData(); toast('Datos guardados en Google Sheets', 'success'); syncStatus(); } catch (e) { toast('Error al guardar: ' + e.message, 'error'); } } }, svg(ic.up, 14), 'Guardar ahora (subir)'),
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); setStatus('Generando hojas de trabajo…'); try { const r = await Cloud.pushSheets(); toast(`Hojas de trabajo actualizadas (${r.hojas})`, 'success'); syncStatus(); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Error al generar hojas: ' + e.message, 'error'); } } }, 'Generar hojas de trabajo'),
-        ),
-        h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '12px' } }, 'Respaldo local (sin nube):'),
-        h('div', { class: 'btn-row', style: { marginTop: '4px' } },
-          h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar backup JSON'),
-          h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar backup JSON')))));
-    // ---- Mantenimiento de datos (limpieza en una pasada) ----
-    const S = H.getState();
-    const nBorr = () => S.eventos.filter(e => !e.anulado && e.oficial !== 'Sí').length;
-    const nConf = () => (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto').length;
+        h('div', { class: 'notice info' }, 'Importa el maestro Excel (hojas PMP_AAAA y Registro_MP-AAAA): lo que coincide se oficializa, lo nuevo se importa y las diferencias quedan como conflictos abajo para resolver. Descarga la plantilla del mes, asigna responsables y súbela.'),
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn primary', onclick: () => importarMaestro(renderConf) }, svg(ic.up, 14), 'Importar maestro (.xlsx)')),
+        h('div', { class: 'btn-row', style: { marginTop: '10px', alignItems: 'center' } },
+          h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Plantilla:'), field(null, selM), field(null, selY),
+          h('button', { class: 'btn', onclick: () => descargarPlantilla(my, mm) }, svg(ic.dl, 14), 'Descargar plantilla'),
+          h('button', { class: 'btn', onclick: () => subirPlantilla(my, mm) }, svg(ic.up, 14), 'Subir asignaciones')),
+        h('div', { style: { marginTop: '14px' } }, h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '5px' } }, 'Conflictos con el maestro:'), confBox))));
+
+    // 3) Mantenimiento de datos
+    const nBorr = () => H.getState().eventos.filter(e => !e.anulado && e.oficial !== 'Sí').length;
     const nDup = () => H.idsMPDuplicadas().size;
     const maint = h('div', { class: 's-bd' });
-    const renderMaint = () => mount(maint,
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn', onclick: () => { const n = nBorr(); if (!n) return toast('No hay borradores', 'success'); if (!window.confirm(`¿Oficializar ${n} evento(s) en borrador?`)) return; const k = H.oficializarTodosBorradores(); H.save(); toast(`${k} eventos oficializados`, 'success'); renderMaint(); refreshChrome(); } }, `Oficializar borradores (${nBorr()})`),
-        h('button', { class: 'btn', onclick: () => go('eventos', { dup: 1 }) }, `Ver MP duplicadas (${nDup()})`),
-        h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
-        h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos')),
-      h('div', { class: 'faint', style: { fontSize: '11.5px', margin: '12px 0 4px' } }, `Conflictos de conciliación pendientes: ${nConf()}`),
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn sm', onclick: () => { const cs = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto'); if (!cs.length) return toast('Sin conflictos', 'success'); if (!window.confirm(`¿Aceptar el maestro en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'aceptar_maestro', null, { skipSave: true })); H.save(); toast(`${cs.length} conflictos resueltos (maestro)`, 'success'); renderMaint(); refreshChrome(); } }, 'Resolver todo: aceptar maestro'),
-        h('button', { class: 'btn sm', onclick: () => { const cs = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto'); if (!cs.length) return toast('Sin conflictos', 'success'); if (!window.confirm(`¿Mantener el programa en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'mantener_programa', null, { skipSave: true })); H.save(); toast(`${cs.length} conflictos resueltos (programa)`, 'success'); renderMaint(); refreshChrome(); } }, 'Resolver todo: mantener programa'),
-        h('button', { class: 'btn sm ghost', onclick: () => go('conciliacion') }, 'Revisar uno por uno →')));
+    const renderMaint = () => mount(maint, h('div', { class: 'btn-row' },
+      h('button', { class: 'btn', onclick: () => { const n = nBorr(); if (!n) return toast('No hay borradores', 'success'); if (!window.confirm(`¿Oficializar ${n} evento(s) en borrador?`)) return; H.oficializarTodosBorradores(); H.save(); toast(`${n} eventos oficializados`, 'success'); renderMaint(); refreshChrome(); } }, `Oficializar borradores (${nBorr()})`),
+      h('button', { class: 'btn', onclick: () => go('eventos', { dup: 1 }) }, `Ver MP duplicadas (${nDup()})`),
+      h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
+      h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos')));
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')),
-      maint));
+      h('div', { class: 's-hd' }, h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
+
+    // 4) Respaldo de emergencia (JSON) — el respaldo principal es el Google Sheet
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Respaldo de emergencia')),
+      h('div', { class: 's-bd' },
+        h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '6px' } }, 'Tu respaldo principal es el Google Sheet. Esta copia JSON es solo por seguridad (p. ej. antes de un cambio grande o sin conexión).'),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar copia JSON'),
+          h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar copia JSON')))));
     return root;
   };
 
@@ -3770,7 +3764,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', conciliacion: 'Conciliación', configuracion: 'Configuración' };
+    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
     $('#tb-title').textContent = titles[view] || 'SIGEM';
   }
 
@@ -3815,8 +3809,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
           h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
           h('button', { class: 'btn sm tb-data', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
-          h('button', { class: 'btn sm tb-data', title: 'Backup JSON', onclick: backupExport }, 'Backup'),
-          h('button', { class: 'btn sm ghost tb-data', title: 'Importar backup', onclick: backupImport }, svg(ic.up, 15)),
+          h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
         ),
         h('main', { class: 'view', id: 'view' })));
     mount(document.getElementById('root'), app);
