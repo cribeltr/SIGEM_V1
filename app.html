@@ -2258,8 +2258,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('div', { class: 's-hd' },
         h('h3', {}, `MP de ${MES_ESP(MONTH)} ${YEAR}`),
         h('span', { class: 'pill ' + (pct >= 100 ? 'op' : pct >= 50 ? 'st' : 'noop') }, pct + '% cumplido'),
-        h('div', { class: 'tb-spacer' }),
-        mpPend.length ? h('button', { class: 'btn sm primary', onclick: () => formMPMasiva(mpPend.map(e => e.inv)) }, svg(ic.plus, 14), `MP masiva (${mpPend.length})`) : null
+        h('div', { class: 'tb-spacer' })
       ),
       h('div', { class: 's-bd' },
         h('div', { class: 'progress' }, h('i', { style: { width: pct + '%', background: pct >= 100 ? 'var(--op)' : pct >= 50 ? 'var(--st)' : 'var(--noop)' } })),
