@@ -233,6 +233,8 @@ td.shrink { width: 1%; }
 .kpi .k-sub { font-size: 11px; color: var(--faint); margin-top: 1px; }
 .kpi .k-bar { height: 4px; border-radius: 3px; background: var(--surface-3); margin-top: 8px; overflow: hidden; }
 .kpi .k-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.progress { height: 7px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
+.progress > i { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width .2s; }
 
 .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
 .section > .s-hd { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-bottom: 1px solid var(--border); }

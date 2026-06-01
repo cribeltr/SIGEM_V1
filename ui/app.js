@@ -142,33 +142,48 @@
     const S = H.getState();
     const noop = S.equipos.filter(e => e.estado === 'no_operativo');
     const st = S.equipos.filter(e => e.estado === 'en_servicio_tecnico');
+    const alerta30 = S.equipos.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
     const pendAct = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
     const vencidos = pendAct.filter(p => p.fechaComp && p.fechaComp < H.hoyLocal());
     const conf = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
     const ciclosAb = S.ciclos.filter(c => c.estado === 'abierto');
+    const borradores = S.eventos.filter(e => e.oficial !== 'Sí' && !e.anulado);
 
-    // MP del mes pendiente
-    const mpPend = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]) && H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
+    // MP del mes (programadas / ejecutadas / pendientes) + atrasadas de meses previos
+    const mpProg = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]));
+    const mpEjec = mpProg.filter(e => H.mpDelMesEjecutada(e, YEAR, MONTH));
+    const mpPend = mpProg.filter(e => H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
+    const pct = mpProg.length ? Math.round(mpEjec.length / mpProg.length * 100) : 0;
+    const mpAtras = S.equipos.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
 
-    const alert = (cls, n, label, onclick) => h('div', { class: 'alert-card ' + cls, onclick },
-      h('div', { class: 'a-n' }, n), h('div', { class: 'a-l' }, label));
+    const alert = (cls, n, label, onclick, sub) => h('div', { class: 'alert-card ' + cls, onclick },
+      h('div', { class: 'a-n' }, n), h('div', {}, h('div', { class: 'a-l' }, label), sub ? h('div', { class: 'a-l faint', style: { marginTop: '1px' } }, sub) : null));
 
     const root = h('div', { class: 'view-narrow' });
     root.appendChild(h('div', { class: 'alert-strip' },
-      alert('hi', noop.length, 'Equipos no operativos', () => go('equipos', { estado: 'no_operativo' })),
-      alert('med', st.length, 'En servicio técnico', () => go('equipos', { estado: 'en_servicio_tecnico' })),
-      alert('hi', vencidos.length, 'Pendientes vencidos', () => go('pendientes', { vencidos: 1 })),
-      alert('lo', conf.length, 'Conflictos de conciliación', () => go('conciliacion')),
-      alert('lo', ciclosAb.length, 'Ciclos correctivos abiertos', () => go('ciclos', { estado: 'abierto' }))
+      alert('hi', noop.length, 'No operativos', () => go('equipos', { estado: 'no_operativo' }), 'fuera de servicio'),
+      alert('med', st.length, 'En servicio técnico', () => go('equipos', { estado: 'en_servicio_tecnico' }), 'fuera del hospital'),
+      alert('hi', alerta30.length, 'Alertas >30 días', () => go('equipos', { alerta30: 1 }), 'sin avance +30d'),
+      alert(vencidos.length ? 'hi' : 'med', pendAct.length, 'Pendientes', () => go('pendientes'), vencidos.length + ' vencidos'),
+      alert(pct >= 100 ? 'lo' : pct >= 50 ? 'med' : 'hi', pct + '%', 'MP del mes', () => go('asignaciones'), mpEjec.length + '/' + mpProg.length + ' ejecutadas'),
+      alert('hi', mpAtras.length, 'MP atrasadas', () => go('equipos', { mpAtras: 1 }), 'meses previos'),
+      alert('lo', ciclosAb.length, 'Ciclos abiertos', () => go('ciclos', { estado: 'abierto' }), 'correctivos en curso'),
+      alert('lo', borradores.length, 'Borradores', () => go('eventos', { oficial: 'No' }), 'sin oficializar'),
+      alert('lo', conf.length, 'Conflictos', () => go('conciliacion'), 'con el maestro')
     ));
 
-    // MP del mes
+    // MP del mes — barra de cumplimiento
     const mpSec = h('div', { class: 'section' },
       h('div', { class: 's-hd' },
         h('h3', {}, `MP de ${MES_ESP(MONTH)} ${YEAR}`),
-        h('span', { class: 's-sub' }, `${mpPend.length} pendiente${mpPend.length !== 1 ? 's' : ''} de ${S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH])).length} programadas`),
+        h('span', { class: 'pill ' + (pct >= 100 ? 'op' : pct >= 50 ? 'st' : 'noop') }, pct + '% cumplido'),
         h('div', { class: 'tb-spacer' }),
         mpPend.length ? h('button', { class: 'btn sm primary', onclick: () => formMPMasiva(mpPend.map(e => e.inv)) }, svg(ic.plus, 14), `MP masiva (${mpPend.length})`) : null
+      ),
+      h('div', { class: 's-bd' },
+        h('div', { class: 'progress' }, h('i', { style: { width: pct + '%', background: pct >= 100 ? 'var(--op)' : pct >= 50 ? 'var(--st)' : 'var(--noop)' } })),
+        h('div', { class: 'btn-row', style: { marginTop: '8px', fontSize: '11.5px', color: 'var(--muted)' } },
+          h('span', {}, '✔ ' + mpEjec.length + ' ejecutadas'), h('span', {}, '◷ ' + mpPend.length + ' pendientes'), h('span', {}, '⚑ ' + mpAtras.length + ' atrasadas'))
       ),
       h('div', { class: 's-bd flush' }, mpPend.length ? mpMesTable(mpPend.slice(0, 12)) : h('div', { class: 'empty' }, '✓ Todas las MP del mes registradas'))
     );
@@ -236,6 +251,8 @@
       if (f.estado !== 'todos') list = list.filter(e => e.estado === f.estado);
       if (f.servicio) list = list.filter(e => e.servicio === f.servicio);
       if (f.fam) list = list.filter(e => e.fam === f.fam);
+      if (params.alerta30) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
+      if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
       list.sort((a, b) => {
         let va, vb;
@@ -254,14 +271,15 @@
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
           h('th', { class: 'shrink' }, allChk), th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
-          th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'))),
+          th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'), h('th', { class: 'num' }, 'Pend.'))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); updBulk(); tr.classList.toggle('sel', ev.target.checked); } });
           const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
             h('td', { onclick: ev => ev.stopPropagation() }, chk),
             h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
             h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
-            h('td', {}, mpMesBadge(e)), h('td', { class: 'muted' }, H.encargadoDe(e) || '—'));
+            h('td', {}, mpMesBadge(e)), h('td', { class: 'muted' }, H.encargadoDe(e) || '—'),
+            h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
           return tr;
         }))
       ));
@@ -274,11 +292,14 @@
     const seg = h('div', { class: 'seg' }, ...[['todos', 'Todos'], ['operativo', 'Operativos'], ['no_operativo', 'No oper.'], ['en_servicio_tecnico', 'Serv. téc.'], ['baja', 'Baja']].map(([v, l]) =>
       h('button', { class: f.estado === v ? 'on' : '', onclick: e => { f.estado = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
 
+    const incomingChip = (params.alerta30 || params.mpAtras)
+      ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, params.alerta30 ? 'Alerta >30 días' : 'MP atrasadas'),
+        h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
     const root = h('div', {},
       h('div', { class: 'filterbar' }, qInput, seg,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
         field(null, selectEl([['', 'Toda familia'], ...familias.map(s => [s, s])], f.fam, { onchange: e => { f.fam = e.target.value; render(); } })),
-        bulkBtn, countNote),
+        incomingChip, bulkBtn, countNote),
       tblWrap);
     render();
     return root;
@@ -307,9 +328,9 @@
           h('span', { class: 'eq-id mono' }, eq.inv), h('span', { class: 'eq-name' }, eq.equipo || '—'), estadoPill(eq.estado),
           eq.estadoDesde ? h('span', { class: 'faint', style: { fontSize: '11.5px' } }, `· ${H.diasEnEstado(eq)} día(s) en estado`) : null),
         h('div', { class: 'kv-grid', style: { marginTop: '12px' } }, ...[
-          ['N° Carpeta', eq.carpeta], ['Serie', eq.serie], ['Marca', eq.marca], ['Modelo', eq.modelo],
+          ['N° Carpeta', eq.carpeta], ['Serie', eq.serie], ['Familia', eq.fam], ['Marca', eq.marca], ['Modelo', eq.modelo],
           ['Servicio', eq.servicio], ['Unidad', eq.unidad], ['Ubicación', eq.ubic], ['Frecuencia MP', eq.freq],
-          ['Procedencia', eq.proc], ['Año', eq.ano], ['VUR', eq.vur], ['Encargado', H.encargadoDe(eq)]
+          ['Procedencia', eq.proc], ['Año', eq.ano], ['VUR', eq.vur], ['Clasificación', eq.clasif], ['Encargado', H.encargadoDe(eq)]
         ].map(([k, v]) => h('div', { class: 'kv' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v == null || v === '' ? '—' : String(v)))))),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formMP(eq.inv) }, svg(ic.plus, 14), 'MP rápida'),
@@ -329,10 +350,15 @@
     else if (tab === 'pendientes') mount(body, tabPendientes(eq));
     else if (tab === 'conflictos') mount(body, tabConflictos(eq));
 
+    const dias = H.diasEnEstado(eq);
+    const banner = (eq.estado !== 'operativo' && eq.estado !== 'baja' && eq.estado !== 'desconocido')
+      ? h('div', { class: 'notice ' + (dias > 30 ? 'warn' : 'info'), style: { marginBottom: '12px' } },
+        `Estado: ${ESTADO_LABEL[eq.estado]} hace ${dias} día(s). Encargado: ${H.encargadoDe(eq) || '—'}.` + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
+      : null;
     return h('div', { class: 'view-narrow' },
       h('div', { class: 'tb-title', style: { marginBottom: '10px', fontSize: '12px' } },
         h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
-      head, tabs, body);
+      head, banner, tabs, body);
   };
   function tabResumen(eq) {
     const evs = H.eventosDe(eq.inv).slice(-6).reverse();
@@ -457,7 +483,7 @@
   // ---- EVENTOS (bitácora global) ------------------------------------------
   VIEWS.eventos = function () {
     const S = H.getState();
-    let f = { tipo: '', oficial: '', q: '', anulados: false };
+    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false };
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
     function data() {
@@ -473,7 +499,7 @@
       h('div', { class: 'filterbar' },
         h('input', { type: 'search', placeholder: 'Buscar inv, ejecutor, folio…', oninput: e => { f.q = e.target.value; render(); } }),
         selectEl([['', 'Todo tipo'], ...tipos.map(t => [t, t])], '', { onchange: e => { f.tipo = e.target.value; render(); } }),
-        selectEl([['', 'Oficial: todos'], ['si', 'Sólo oficiales'], ['no', 'Sólo borradores']], '', { onchange: e => { f.oficial = e.target.value; render(); } }),
+        selectEl([['', 'Oficial: todos'], ['si', 'Sólo oficiales'], ['no', 'Sólo borradores']], f.oficial, { onchange: e => { f.oficial = e.target.value; render(); } }),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
       wrap);
@@ -504,35 +530,77 @@
   }
 
   // ---- ASIGNACIONES MP ----------------------------------------------------
+  let mpSel = new Set();
   VIEWS.asignaciones = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? params.month : MONTH;
+    let estadoMP = params.estadoMP || 'todas';   // todas | pend | ejec
+    let sinAsig = !!params.sinAsignar;
+    mpSel = new Set();
+    const keyMes = () => `${y}-${String(m + 1).padStart(2, '0')}`;
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
-    function render() {
-      const keyMes = `${y}-${String(m + 1).padStart(2, '0')}`;
-      const asig = (S.asignacionesMP || {})[keyMes] || {};
-      const list = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[m]));
-      note.textContent = `${list.length} equipo(s) programados · ${list.filter(e => asig[e.inv]).length} con responsable`;
-      mount(wrap, list.length ? h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Prog.'), h('th', {}, 'MP del mes'), h('th', {}, 'Responsable'))),
-        h('tbody', {}, ...list.map(e => h('tr', {},
-          h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
-          h('td', { class: 'mono' }, (e.prog || {})[MESES[m]] || '—'), h('td', {}, mpMesBadgeFor(e, y, m)),
-          h('td', {}, selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], asig[e.inv] || '', { onchange: ev => { S.asignacionesMP = S.asignacionesMP || {}; S.asignacionesMP[keyMes] = S.asignacionesMP[keyMes] || {}; if (ev.target.value) S.asignacionesMP[keyMes][e.inv] = ev.target.value; else delete S.asignacionesMP[keyMes][e.inv]; H.save(); } }))
-        )))
-      ) : h('div', { class: 'empty' }, `Sin equipos programados en ${MES_ESP(m)} ${y}`));
+    const bulkMP = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formMPMasiva([...mpSel]) }, svg(ic.plus, 14), 'Registrar MP');
+    const bulkAsig = h('button', { class: 'btn sm', style: { display: 'none' }, onclick: () => formAsignarEjecutor([...mpSel], keyMes()) }, 'Asignar ejecutor');
+    function updBulk() { const on = mpSel.size; bulkMP.style.display = on ? '' : 'none'; bulkAsig.style.display = on ? '' : 'none'; if (on) { bulkMP.lastChild.textContent = `Registrar MP (${on})`; bulkAsig.textContent = `Asignar ejecutor (${on})`; } }
+    function data() {
+      const asig = (S.asignacionesMP || {})[keyMes()] || {};
+      let list = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[m]));
+      if (estadoMP === 'ejec') list = list.filter(e => H.mpDelMesEjecutada(e, y, m));
+      if (estadoMP === 'pend') list = list.filter(e => H.mpEstadoMes(e, y, m) === 'pendiente');
+      if (sinAsig) list = list.filter(e => !asig[e.inv]);
+      return { list, asig };
     }
+    function render() {
+      const { list, asig } = data(); const km = keyMes();
+      note.textContent = `${list.length} programados · ${list.filter(e => asig[e.inv]).length} con responsable`;
+      const allChk = h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(x => mpSel.add(x.inv)); else mpSel.clear(); render(); } });
+      mount(wrap, list.length ? h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', { class: 'shrink' }, allChk), h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Freq'), h('th', {}, 'Prog.'), h('th', {}, 'Resultado'), h('th', {}, 'Estado MP'), h('th', {}, 'Responsable'), h('th', { class: 'shrink' }, ''))),
+        h('tbody', {}, ...list.map(e => {
+          const chk = h('input', { type: 'checkbox', checked: mpSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? mpSel.add(e.inv) : mpSel.delete(e.inv); updBulk(); tr.classList.toggle('sel', ev.target.checked); } });
+          const r = H.resultadoMPMes(e, y, m);
+          const tr = h('tr', { class: mpSel.has(e.inv) ? 'sel' : '' },
+            h('td', { onclick: ev => ev.stopPropagation() }, chk),
+            h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv),
+            h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', { class: 'mono' }, (e.registro && e.registro[MESES[m]] && e.registro[MESES[m]].P) || (e.prog || {})[MESES[m]] || '—'),
+            h('td', {}, r ? h('span', { class: 'pill ' + mpResPillCls(r) }, r) : h('span', { class: 'faint' }, '—')),
+            h('td', {}, mpEstadoBadge(e, y, m)),
+            h('td', {}, selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], asig[e.inv] || '', { onclick: ev => ev.stopPropagation(), onchange: ev => { S.asignacionesMP = S.asignacionesMP || {}; S.asignacionesMP[km] = S.asignacionesMP[km] || {}; if (ev.target.value) S.asignacionesMP[km][e.inv] = ev.target.value; else delete S.asignacionesMP[km][e.inv]; H.save(); } })),
+            h('td', {}, h('button', { class: 'btn sm primary', onclick: ev => { ev.stopPropagation(); formMP(e.inv, H.fechaSugeridaMP(y, m)); } }, 'MP')));
+          return tr;
+        }))
+      ) : h('div', { class: 'empty' }, `Sin equipos con MP programada en ${MES_ESP(m)} ${y}`));
+      kbList = { rows: list.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
+      updBulk();
+    }
+    const seg = h('div', { class: 'seg' }, ...[['todas', 'Todas'], ['pend', 'Pendientes'], ['ejec', 'Ejecutadas']].map(([v, l]) =>
+      h('button', { class: estadoMP === v ? 'on' : '', onclick: e => { estadoMP = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
     const root = h('div', {},
       h('div', { class: 'filterbar' },
-        field(null, selectEl(MESES.map((mm, i) => [i, MES_ESP(i)]), m, { onchange: e => { m = +e.target.value; render(); } })),
-        field(null, selectEl([YEAR + 1, YEAR, YEAR - 1].map(yy => [yy, yy]), y, { onchange: e => { y = +e.target.value; render(); } })),
+        field(null, selectEl(MESES.map((mm, i) => [i, MES_ESP(i)]), m, { onchange: e => { m = +e.target.value; mpSel.clear(); render(); } })),
+        field(null, selectEl([YEAR + 1, YEAR, YEAR - 1].map(yy => [yy, yy]), y, { onchange: e => { y = +e.target.value; mpSel.clear(); render(); } })),
+        seg,
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: sinAsig ? true : false, onchange: e => { sinAsig = e.target.checked; mpSel.clear(); render(); } }), 'Sin asignar'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => descargarPlantilla(y, m) }, svg(ic.dl, 14), 'Descargar plantilla'),
-        h('button', { class: 'btn sm', onclick: () => subirPlantilla(y, m) }, svg(ic.up, 14), 'Subir plantilla'), note),
+        bulkMP, bulkAsig,
+        h('button', { class: 'btn sm', onclick: () => descargarPlantilla(y, m) }, svg(ic.dl, 14), 'Plantilla'),
+        h('button', { class: 'btn sm', onclick: () => subirPlantilla(y, m) }, svg(ic.up, 14), 'Subir'), note),
       wrap);
     render(); return root;
   };
-  function mpMesBadgeFor(e, y, m) { const st = H.mpEstadoMes(e, y, m); return st === 'ejecutada' ? h('span', { class: 'pill op' }, '✓') : st === 'reprogramada' ? h('span', { class: 'pill st' }, 'R') : st === 'otro' ? h('span', { class: 'pill noop' }, '!') : h('span', { class: 'pill noop' }, 'Pend.'); }
+  function mpResPillCls(r) { if (r === 'Si') return 'op'; if (/^C[1-8]$/.test(r)) return 'st'; if (r === 'Baja') return 'baja'; return 'noop'; }
+  function mpEstadoBadge(e, y, m) { const s = H.mpEstadoMes(e, y, m); const map = { ejecutada: ['op', 'Ejecutada'], reprogramada: ['st', 'Reprogramada'], otro: ['noop', 'Otro'], pendiente: ['noop', 'Pendiente'] }[s]; return h('span', { class: 'pill ' + map[0] }, map[1]); }
+  function formAsignarEjecutor(invs, km) {
+    if (!invs.length) return;
+    const ejec = selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], '');
+    openDrawer({
+      title: `Asignar ejecutor · ${invs.length} equipos`,
+      body: h('div', {}, h('div', { class: 'notice info' }, `Se asignará el responsable de MP a los ${invs.length} equipos seleccionados (${km}).`), field('Responsable', ejec)),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: () => { const S = H.getState(); S.asignacionesMP = S.asignacionesMP || {}; S.asignacionesMP[km] = S.asignacionesMP[km] || {}; invs.forEach(inv => { if (ejec.value) S.asignacionesMP[km][inv] = ejec.value; else delete S.asignacionesMP[km][inv]; }); H.save(); toast(`Responsable asignado a ${invs.length} equipos`, 'success'); closeDrawer(); } }, `Asignar a ${invs.length}`)]
+    });
+  }
 
   // ---- CONCILIACIÓN -------------------------------------------------------
   VIEWS.conciliacion = function () {
@@ -642,11 +710,11 @@
       function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio, c.folio]), ['', '— sin vincular —']], ciclosAb[0].folio) : h('input', { type: 'text', placeholder: 'Folio SIGEM' }); }
       if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'Folio (vacío = auto)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Folio SIGEM', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
       else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('Folio SIGEM', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
-      else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Oficial', oficial)), field('Observación', obs)); }
-      else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Oficial', oficial)), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
-      else if (tipo === 'Recepción') { const folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Folio SIGEM', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Oficial', oficial)), field('Observación', obs)); }
+      else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Folio SIGEM', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
+      else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }
       else if (tipo === 'Reparación') { const folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'), repuestos = h('input', { type: 'text', placeholder: 'Repuestos' }); ctrls = { folio, estado, repuestos }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Folio SIGEM', folio), field('Estado', estado)), field('Repuestos', repuestos), field('Descripción', obs), field('Oficial', oficial)); }
-      else if (tipo === 'Mantención preventiva') { const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], 'Si'), mpEstado = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo'); ctrls = { resultado, _mpEstado: mpEstado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado (si "Si")', mpEstado)), field('Ejecutor', ejecutor), field('Observación', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Mantención preventiva') { const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], 'Si'), mpEstado = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo'), ejec2 = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], ''); ctrls = { resultado, _mpEstado: mpEstado, ejecutor2: ejec2 }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado (si "Si")', mpEstado)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Ejecutor 2', ejec2)), field('Observación', obs), field('Oficial', oficial), h('div', { class: 'notice' }, 'C1–C8 → pendiente de reprogramación · NU → "Localizar equipo" · Baja → equipo a baja.')); }
 
       const guardar = () => {
         const d = { inv: invSel, tipo, fecha: fecha.value, ejecutor: ejecutor.value, obs: obs.value, oficial: oficial.value };
@@ -797,18 +865,100 @@
     const inp = h('input', { type: 'file', accept: 'application/json', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const data = JSON.parse(await f.text()); const msg = `Importar backup?\n· Equipos: ${data.equipos?.length || 0}\n· Eventos: ${data.eventos?.length || 0}\nReemplaza los datos actuales.`; if (!window.confirm(msg)) return; const r = H.importarBackup(data); if (!r.ok) return toast(r.error, 'error'); toast(`Importado · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
     document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 1000);
   }
+  // Export Excel completo (portado del sistema v1.0): Léeme, Por resolver, Eventos,
+  // Equipos, PMP_AAAA, Registro_MP-AAAA, Pendientes, Conflictos, Ciclos, y la hoja
+  // oculta de eventos automáticos del maestro.
   function excelExport() {
     if (!window.XLSX) return toast('XLSX no disponible (sin conexión)', 'error');
     const S = H.getState(); S.equipos.forEach(H.recalcEstadoEquipo);
     const wb = XLSX.utils.book_new();
-    const addT = (rows, name) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ ' ': '(sin datos)' }]); if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] }; XLSX.utils.book_append_sheet(wb, ws, name); };
-    addT(S.equipos.map(e => ({ 'N° Inv.': e.inv, Equipo: e.equipo, Servicio: e.servicio, Unidad: e.unidad, Estado: ESTADO_LABEL[e.estado] || e.estado, Marca: e.marca, Modelo: e.modelo, Serie: e.serie, Frecuencia: e.freq, Encargado: H.encargadoDe(e) || '' })), 'Equipos');
-    addT(S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).map(H.mapearEventoFila), 'Eventos');
-    addT(S.eventos.filter(e => !e.anulado && H.eventoEsAuto(e)).map(H.mapearEventoFila), 'Eventos_auto');
-    addT(S.pendientes.filter(p => !p.anulado).map(p => ({ 'N° Inv.': p.inv, Equipo: p.equipo, Tipo: TIPO_PENDIENTE[p.tipo] || p.tipo, Descripción: p.desc, Estado: ESTADO_PEND_LABEL[p.estado] || p.estado, Ejecutor: p.ejecutor || '', Compromiso: fmtFecha(p.fechaComp) })), 'Pendientes');
-    addT(S.ciclos.map(c => ({ Folio: c.folio, 'N° Inv.': c.inv, Apertura: fmtFecha(c.fechaApertura), Cierre: c.fechaCierre ? fmtFecha(c.fechaCierre) : '', Estado: c.estado, Ingeniero: c.ingenieroAsignado || '' })), 'Ciclos');
-    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), 'SIGEM_' + H.hoyLocal() + '.xlsx');
-    toast('Excel exportado', 'success');
+    const year = new Date().getFullYear(), hoy = H.hoyLocal();
+    const addPlain = (ws, nombre, cols) => { if (cols) ws['!cols'] = cols; XLSX.utils.book_append_sheet(wb, ws, nombre); };
+    const tabla = (rows, nombre, cols) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ ' ': '(sin datos)' }]); if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] }; addPlain(ws, nombre, cols); };
+    const mapEv = H.mapearEventoFila;
+    const colsEv = [{ wch: 5 }, { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 9 }, { wch: 13 }, { wch: 20 }, { wch: 21 }, { wch: 8 }, { wch: 13 }, { wch: 13 }, { wch: 20 }, { wch: 16 }, { wch: 42 }, { wch: 8 }, { wch: 12 }];
+    const evNoAnul = S.eventos.filter(e => !e.anulado);
+    const evMios = evNoAnul.filter(e => !H.eventoEsAuto(e));
+    const evAuto = evNoAnul.filter(H.eventoEsAuto);
+    const pendAb = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const ciclosAb = S.ciclos.filter(c => c.estado === 'abierto');
+    const borr = evMios.filter(e => e.oficial !== 'Sí');
+
+    // 0. Léeme
+    const leeme = [
+      ['SIGEM — Gestión de equipos biomédicos críticos'], ['Exportado el', hoy], [],
+      ['RESUMEN'], ['Equipos en catálogo', S.equipos.length], ['Eventos registrados por ti', evMios.length],
+      ['   · de ellos, borradores por oficializar', borr.length], ['Eventos automáticos (del maestro)', evAuto.length],
+      ['Pendientes por resolver', pendAb.length], ['Ciclos correctivos abiertos', ciclosAb.length], [],
+      ['QUÉ CONTIENE CADA HOJA'],
+      ['Por resolver', 'Lo accionable: pendientes abiertos, ciclos abiertos y borradores. Pensada para imprimir.'],
+      ['Eventos', 'Lo que TÚ registraste (incluye borradores; mira la columna Oficial).'],
+      ['Equipos', 'Catálogo de equipos con su estado actual.'],
+      ['PMP_' + year, 'Programación anual de mantención (espejo de tu carta gantt / maestro).'],
+      ['Registro_MP-' + year, 'Programado (P) y Realizado (R) de la MP, por mes.'],
+      ['Pendientes', 'Todos los pendientes con su estado (No iniciado / En proceso / Resuelto).'],
+      ['Ciclos correctivos', 'Ciclos de falla, con apertura y cierre.'],
+      ['Eventos (automáticos)', 'HOJA OCULTA. Eventos que generó el programa al conciliar el maestro.']
+    ];
+    addPlain(XLSX.utils.aoa_to_sheet(leeme), 'Léeme', [{ wch: 38 }, { wch: 82 }]);
+
+    // 1. Por resolver
+    const prRows = [];
+    pendAb.slice().sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999')).forEach(p => prRows.push({
+      'Qué': 'Pendiente', 'Estado': ESTADO_PEND_LABEL[p.estado] || p.estado, 'N° Inv.': p.inv, 'Equipo': p.equipo || '', 'Servicio': p.servicio || '',
+      'Detalle': (TIPO_PENDIENTE[p.tipo] || p.tipo) + (p.desc ? (' — ' + p.desc) : ''), 'Ejecutor': p.ejecutor || '', 'Compromiso': fmtFecha(p.fechaComp), 'Hecho': ''
+    }));
+    ciclosAb.forEach(c => { const eq = H.findEquipo(c.inv); prRows.push({ 'Qué': 'Ciclo abierto', 'Estado': 'Abierto', 'N° Inv.': c.inv, 'Equipo': eq ? (eq.equipo || '') : '', 'Servicio': eq ? (eq.servicio || '') : '', 'Detalle': 'Folio ' + (c.folio || ''), 'Ejecutor': c.ingenieroAsignado || '', 'Compromiso': '', 'Hecho': '' }); });
+    borr.forEach(e => prRows.push({ 'Qué': 'Borrador', 'Estado': 'Por oficializar', 'N° Inv.': e.inv, 'Equipo': e.equipo || '', 'Servicio': e.servicio || '', 'Detalle': e.tipo + (e.obs ? (' — ' + e.obs) : ''), 'Ejecutor': e.ejecutor || '', 'Compromiso': fmtFecha(e.fecha), 'Hecho': '' }));
+    tabla(prRows, 'Por resolver', [{ wch: 12 }, { wch: 15 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 46 }, { wch: 20 }, { wch: 12 }, { wch: 8 }]);
+
+    // 2. Eventos
+    tabla(evMios.map(mapEv), 'Eventos', colsEv);
+
+    // 3. Equipos
+    tabla(S.equipos.map(e => ({
+      'N° Inv.': e.inv, 'N° Carpeta': e.carpeta || '', 'Serie': e.serie || '', 'Familia': e.fam || '', 'Equipo': e.equipo || '', 'Marca': e.marca || '', 'Modelo': e.modelo || '',
+      'Servicio': e.servicio || '', 'Unidad': e.unidad || '', 'Ubicación': e.ubic || '', 'Procedencia': e.proc || '', 'Año': e.ano || '', 'VUR': e.vur || '', 'Clasificación': e.clasif || '', 'Frecuencia MP': e.freq || '',
+      'Estado': ESTADO_LABEL[e.estado] || e.estado, 'Días en estado': H.diasEnEstado(e), 'Pendientes abiertos': H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, 'Ciclo abierto': H.ciclosAbiertosDe(e.inv).length > 0 ? 'Sí' : 'No'
+    })), 'Equipos', [{ wch: 13 }, { wch: 9 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 12 }, { wch: 13 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 11 }]);
+
+    // 4. PMP_AAAA — espejo del maestro
+    const pmpHeader = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Clasificación', 'ENU / Baja', 'Observación', 'Frecuencia MP', 'Responsable MP', ...MESES];
+    const pmpData = [pmpHeader];
+    S.equipos.forEach((e, i) => { const row = [e.fam || '', i + 1, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.enu || '', '', e.freq || '', '']; MESES.forEach(m => row.push((e.prog || {})[m] || '')); pmpData.push(row); });
+    addPlain(XLSX.utils.aoa_to_sheet(pmpData), `PMP_${year}`);
+
+    // 5. Registro_MP-AAAA — P y R por mes
+    const regHeader2 = Array(19).fill(''); MESES.forEach(() => regHeader2.push('P', 'R'));
+    const regHeaderMonths = Array(19).fill(''); MESES.forEach(m => regHeaderMonths.push(m, '')); regHeaderMonths[3] = 'N° Inventario';
+    const regData = [regHeaderMonths, regHeader2];
+    S.equipos.forEach((e, i) => { const row = ['', i + 1, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.enu || '', '', e.freq || '', '']; MESES.forEach(m => { const reg = (e.registro || {})[m] || {}; const prog = (e.prog || {})[m] || ''; row.push(reg.P || prog || '', reg.R || ''); }); regData.push(row); });
+    addPlain(XLSX.utils.aoa_to_sheet(regData), `Registro_MP-${year}`);
+
+    // 6. Pendientes
+    tabla(S.pendientes.filter(p => !p.anulado).map(p => ({
+      'ID': p.id, 'N° Inv.': p.inv, 'Equipo': p.equipo || '', 'Servicio': p.servicio || '', 'Tipo': TIPO_PENDIENTE[p.tipo] || p.tipo, 'Descripción': p.desc || '', 'Ejecutor': p.ejecutor || '',
+      'Fecha creación': fmtFecha(p.fechaCrea), 'Fecha compromiso': fmtFecha(p.fechaComp), 'Fecha cierre': fmtFecha(p.fechaCierre), 'Estado': ESTADO_PEND_LABEL[p.estado] || p.estado, 'Origen': p.origen || ''
+    })), 'Pendientes', [{ wch: 5 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 15 }, { wch: 13 }, { wch: 13 }, { wch: 14 }]);
+
+    // 7. Conflictos
+    if (S.conflictos && S.conflictos.length) tabla(S.conflictos.map(c => ({
+      'ID': c.id, 'Tipo': c.tipo, 'N° Inv.': c.inv, 'Estado': c.estado, 'Hoja': c.hoja || '', 'Mes': c.mes || '', 'Campo': c.campo || '', 'Valor programa': c.valorPrograma || '', 'Valor maestro': c.valorMaestro || '',
+      'Detectado': c.fechaDeteccion ? fmtFecha(c.fechaDeteccion.slice(0, 10)) : '', 'Resuelto': c.fechaResolucion ? fmtFecha(c.fechaResolucion.slice(0, 10)) : '', 'Acción aplicada': c.accionAplicada || '', 'Valor final': c.resolucionValor || ''
+    })), 'Conflictos', [{ wch: 5 }, { wch: 14 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 6 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }]);
+
+    // 8. Ciclos correctivos
+    if (S.ciclos && S.ciclos.length) tabla(S.ciclos.map(c => ({
+      'Folio SIGEM': c.folio, 'N° Inv.': c.inv, 'Estado': c.estado, 'Apertura': fmtFecha(c.fechaApertura), 'Cierre': fmtFecha(c.fechaCierre), 'Ingeniero asignado': c.ingenieroAsignado || '', 'Descripción inicial': c.descripcionInicial || ''
+    })), 'Ciclos correctivos', [{ wch: 22 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 22 }, { wch: 46 }]);
+
+    // 9. Eventos automáticos (oculta)
+    if (evAuto.length) tabla(evAuto.map(mapEv), 'Eventos (automáticos)', colsEv);
+    wb.Workbook = { Sheets: wb.SheetNames.map(n => n === 'Eventos (automáticos)' ? { Hidden: 1 } : {}) };
+
+    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `SIGEM_${hoy}.xlsx`);
+    const vis = wb.SheetNames.length - (evAuto.length ? 1 : 0);
+    toast(`Excel exportado · ${vis} hoja(s)` + (evAuto.length ? ' + 1 oculta' : ''), 'success');
   }
   function descargarPlantilla(y, m) {
     if (!window.XLSX) return toast('XLSX no disponible', 'error');

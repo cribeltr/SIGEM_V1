@@ -71,6 +71,28 @@ HHHA.bootstrapDatos();
 `UI.onChange` re-renderiza la vista actual tras cada `save()`, manteniendo la
 interfaz sincronizada con el estado.
 
+## Información incorporada desde SIGEM v1.0
+
+Verificado contra el build `index_69.html` (SIGEM v1.0). La lógica de negocio y el
+SEED son idénticos a los de este núcleo; se incorporó la **información/visión que
+faltaba** en la UI, sin cambiar el diseño:
+
+- **Cola de trabajo**: métricas *Alertas >30 días*, *MP atrasadas* (meses previos),
+  *Borradores* (sin oficializar) y *MP del mes como % cumplido* con barra de progreso
+  (9 indicadores accionables en total).
+- **Asignaciones MP**: columnas *Resultado* y *Estado MP*, selección múltiple con
+  *Registrar MP masiva* y *Asignar ejecutor* en lote, y filtros *Pendientes/Ejecutadas*
+  y *Sin asignar*.
+- **Equipos**: columna *Pend.* (pendientes abiertos) y filtros enlazados desde el inicio
+  (*Alerta >30 días*, *MP atrasadas*).
+- **Ficha de equipo**: campos *Familia* y *Clasificación*, y aviso de estado
+  ("hace N días · encargado", en rojo si >30 días).
+- **Formulario de evento**: campos faltantes — OC (*Empresa, Vía, Folio informe TD*),
+  Recepción (*N° envío original, Folio guía*), MP (*Ejecutor 2*), Envío (*Ejecutor*).
+- **Exportar Excel**: libro completo de 10 hojas — *Léeme*, *Por resolver*, *Eventos*,
+  *Equipos*, *PMP_AAAA*, *Registro_MP-AAAA* (espejo del maestro, round-trip con
+  conciliación), *Pendientes*, *Conflictos*, *Ciclos* y *Eventos automáticos* (oculta).
+
 ## Notas
 - Mismo `STORAGE_KEY` que el núcleo (`hhha_v1_data`): comparte datos con cualquier
   app que use este motor.
