@@ -28,10 +28,23 @@ var CHUNK        = 45000;         // tamaño de trozo por celda (límite de celd
 function doGet(e) {
   try {
     e = e || {}; var p = e.parameter || {};
-    if (!okToken(p.token)) return _json({ ok: false, error: 'token invalido' });
-    return _json({ ok: true, dataB64: readData(), updated: readMeta('updated') });
+    if (p.api === 'read') {                       // modo HTTP: la app abierta FUERA de Apps Script
+      if (!okToken(p.token)) return _json({ ok: false, error: 'token invalido' });
+      return _json({ ok: true, dataB64: readData(), updated: readMeta('updated') });
+    }
+    // Por defecto: SERVIR LA APP (verla desde cualquier parte con la URL .../exec).
+    return HtmlService.createHtmlOutputFromFile('Index')
+      .setTitle('SIGEM · Equipos Biomédicos Críticos')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) { return _json({ ok: false, error: String(err) }); }
 }
+
+/* API para google.script.run — la usa la app cuando se sirve desde este Apps
+ * Script (mismo origen, sin CORS). El control de acceso lo da la implementación. */
+function apiRead() { return { ok: true, dataB64: readData(), updated: readMeta('updated') }; }
+function apiSaveData(dataB64) { writeData(String(dataB64 || '')); writeMeta('updated', new Date().toISOString()); return { ok: true, ts: new Date().toISOString() }; }
+function apiSaveSheets(sheets) { writeSheets(sheets || []); hideSystemSheets(); return { ok: true }; }
 
 function doPost(e) {
   try {

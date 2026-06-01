@@ -94,8 +94,22 @@ la app.
 - Con *Sincronización automática*: al abrir, **trae** los datos desde la hoja; al
   cambiar algo, **sube** (con un pequeño retardo). También hay botones manuales
   *Traer* / *Guardar ahora* / *Generar hojas* y respaldo JSON local.
-- Nota CORS: si abres el `app.html` con `file://` y el navegador bloquea la
-  llamada, hospeda el HTML (Drive, GitHub Pages o un servidor local).
+### Verlo desde cualquier parte (servido por el propio Apps Script) — recomendado
+
+Para abrir SIGEM desde cualquier dispositivo con solo una URL y **sin problemas de
+CORS**, sirve el HTML desde el mismo Apps Script:
+
+1. En el proyecto de Apps Script, crea un archivo **HTML** llamado **`Index`**
+   (➕ → HTML) y pega **todo el contenido de `app.html`** (o usa
+   `apps-script/Index.html`, que ya es una copia lista).
+2. Asegúrate de tener también `Code.gs` (ya incluye `doGet` que sirve `Index`).
+3. **Implementar → Nueva implementación → Aplicación web** (acceso *Cualquiera*).
+4. Abre la URL `…/exec`: verás la app. Detecta que corre dentro de Apps Script y
+   usa el puente `google.script.run` para leer/guardar en la hoja (sin `fetch`,
+   sin CORS). No hay que configurar URL ni token.
+
+Si en cambio abres `app.html` localmente (`file://`) o lo hospedas aparte, la app
+usa `fetch` contra la URL `…/exec` que pegues en Configuración (modo HTTP).
 
 ## Gestión (no solo registro)
 

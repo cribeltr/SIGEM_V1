@@ -1136,11 +1136,24 @@
   }
 
   // ============================ GOOGLE SHEETS (Cloud) =======================
-  let cloudApplying = false, cloudTimer = null, cloudSyncing = false;
+  let cloudApplying = false, cloudTimer = null;
+  // ¿La app está siendo servida POR el Apps Script? Entonces usamos el puente
+  // google.script.run (mismo origen, sin CORS) en lugar de fetch.
+  function isGAS() { try { return !!(typeof google !== 'undefined' && google.script && google.script.run); } catch (e) { return false; } }
+  function gasCall(fn) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    return new Promise((resolve, reject) => {
+      const r = google.script.run.withSuccessHandler(resolve).withFailureHandler(e => reject(new Error((e && e.message) || String(e))));
+      r[fn].apply(r, args);
+    });
+  }
   const Cloud = {
     get url() { return localStorage.getItem('sigem_gs_url') || ''; },
     get token() { return localStorage.getItem('sigem_gs_token') || ''; },
-    get auto() { return localStorage.getItem('sigem_gs_auto') === '1'; },
+    get gas() { return isGAS(); },
+    get connected() { return isGAS() || !!this.url; },
+    // En modo Apps Script la sync está activa por defecto (la hoja ES el almacén).
+    get auto() { return isGAS() ? localStorage.getItem('sigem_gs_auto') !== '0' : localStorage.getItem('sigem_gs_auto') === '1'; },
     get lastSync() { return localStorage.getItem('sigem_gs_last') || ''; },
     set(url, token, auto) {
       localStorage.setItem('sigem_gs_url', (url || '').trim());
@@ -1148,12 +1161,12 @@
       localStorage.setItem('sigem_gs_auto', auto ? '1' : '0');
     },
     _markSync() { localStorage.setItem('sigem_gs_last', new Date().toISOString()); },
+    _getUrl() { return this.url + (this.url.includes('?') ? '&' : '?') + 'api=read&token=' + encodeURIComponent(this.token); },
     async pull() {
-      if (!this.url) throw new Error('Sin URL configurada');
       if (!window.LZString) throw new Error('LZString no disponible');
-      const u = this.url + (this.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(this.token);
-      const res = await fetch(u, { redirect: 'follow' });
-      const j = await res.json();
+      let j;
+      if (isGAS()) j = await gasCall('apiRead');
+      else { if (!this.url) throw new Error('Sin URL configurada'); j = await (await fetch(this._getUrl(), { redirect: 'follow' })).json(); }
       if (!j.ok) throw new Error(j.error || 'respuesta inválida');
       if (!j.dataB64) return { empty: true };
       const obj = JSON.parse(LZString.decompressFromBase64(j.dataB64));
@@ -1163,32 +1176,33 @@
       return { ok: true, eventos: (obj.eventos || []).length, equipos: (obj.equipos || []).length };
     },
     async pushData() {
-      if (!this.url || !window.LZString) return;
+      if (!window.LZString) return;
       const dataB64 = LZString.compressToBase64(H.exportarBackupJSON());
-      const res = await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, dataB64 }), redirect: 'follow' });
-      const j = await res.json().catch(() => ({ ok: true }));
+      let j;
+      if (isGAS()) j = await gasCall('apiSaveData', dataB64);
+      else { if (!this.url) return; j = await (await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, dataB64 }), redirect: 'follow' })).json().catch(() => ({ ok: true })); }
       if (j && j.ok === false) throw new Error(j.error || 'error al guardar');
       this._markSync();
     },
     async pushSheets() {
-      if (!this.url) throw new Error('Sin URL configurada');
       const sheets = cuadernoSheets();
-      const res = await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, sheets }), redirect: 'follow' });
-      const j = await res.json().catch(() => ({ ok: true }));
+      let j;
+      if (isGAS()) j = await gasCall('apiSaveSheets', sheets);
+      else { if (!this.url) throw new Error('Sin URL configurada'); j = await (await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, sheets }), redirect: 'follow' })).json().catch(() => ({ ok: true })); }
       if (j && j.ok === false) throw new Error(j.error || 'error al escribir hojas');
       this._markSync();
       return { ok: true, hojas: sheets.length };
     },
     async test() {
-      const u = this.url + (this.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(this.token);
-      const res = await fetch(u, { redirect: 'follow' });
-      const j = await res.json();
+      let j;
+      if (isGAS()) j = await gasCall('apiRead');
+      else { j = await (await fetch(this._getUrl(), { redirect: 'follow' })).json(); }
       if (!j.ok) throw new Error(j.error || 'sin ok');
       return j;
     }
   };
   function scheduleCloudPush() {
-    if (!Cloud.auto || !Cloud.url || cloudApplying) return;
+    if (!Cloud.auto || !Cloud.connected || cloudApplying) return;
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(() => { Cloud.pushData().then(() => refreshChrome()).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 4000);
   }
@@ -1263,7 +1277,9 @@
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.cloud, 16), h('h3', {}, 'Almacenamiento en Google Sheets')),
       h('div', { class: 's-bd' },
-        h('div', { class: 'notice info' }, 'Conecta SIGEM con un Google Sheet mediante un Apps Script (Web App). El estado del sistema se guarda comprimido en una hoja OCULTA y se generan hojas de trabajo legibles para usar el archivo sin la app. Instrucciones de instalación: archivo apps-script/Code.gs del repositorio.'),
+        Cloud.gas
+          ? h('div', { class: 'notice', style: { borderColor: 'color-mix(in srgb, var(--op) 35%, var(--border))', background: 'var(--op-bg)', color: 'color-mix(in srgb, var(--op) 80%, var(--text))' } }, '✓ Estás viendo SIGEM servido desde Apps Script. Los datos se guardan automáticamente en este Google Sheet (sin CORS y accesible desde cualquier parte con la URL). No necesitas configurar URL ni token.')
+          : h('div', { class: 'notice info' }, 'Conecta SIGEM con un Google Sheet mediante un Apps Script (Web App). El estado del sistema se guarda comprimido en una hoja OCULTA y se generan hojas de trabajo legibles para usar el archivo sin la app. Para verlo desde cualquier parte, pega este app.html en un archivo HTML "Index" del Apps Script (ver apps-script/Code.gs).'),
         field('URL del Apps Script (termina en /exec)', urlIn),
         field('Token compartido (opcional, debe coincidir con SHARED_TOKEN del script)', tokIn),
         h('label', { class: 'checkbox', style: { marginTop: '8px' } }, autoIn, 'Sincronización automática: guardar cada cambio en Google Sheets'),
@@ -1275,9 +1291,9 @@
       h('div', { class: 's-hd' }, h('h3', {}, 'Sincronización manual')),
       h('div', { class: 's-bd' },
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); if (!window.confirm('Traer los datos desde Google Sheets reemplazará lo que tienes en este navegador. ¿Continuar?')) return; try { const r = await Cloud.pull(); toast(r.empty ? 'La hoja aún no tiene datos' : `Traído · ${r.equipos} equipos · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (e) { toast('Error al traer: ' + e.message, 'error'); } } }, svg(ic.dl, 14), 'Traer datos (descargar)'),
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); try { await Cloud.pushData(); toast('Datos guardados en Google Sheets', 'success'); syncStatus(); } catch (e) { toast('Error al guardar: ' + e.message, 'error'); } } }, svg(ic.up, 14), 'Guardar ahora (subir)'),
-          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); setStatus('Generando hojas de trabajo…'); try { const r = await Cloud.pushSheets(); toast(`Hojas de trabajo actualizadas (${r.hojas})`, 'success'); syncStatus(); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Error al generar hojas: ' + e.message, 'error'); } } }, 'Generar hojas de trabajo'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); if (!window.confirm('Traer los datos desde Google Sheets reemplazará lo que tienes en este navegador. ¿Continuar?')) return; try { const r = await Cloud.pull(); toast(r.empty ? 'La hoja aún no tiene datos' : `Traído · ${r.equipos} equipos · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (e) { toast('Error al traer: ' + e.message, 'error'); } } }, svg(ic.dl, 14), 'Traer datos (descargar)'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); try { await Cloud.pushData(); toast('Datos guardados en Google Sheets', 'success'); syncStatus(); } catch (e) { toast('Error al guardar: ' + e.message, 'error'); } } }, svg(ic.up, 14), 'Guardar ahora (subir)'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.connected) return toast('Configura la URL primero', 'error'); setStatus('Generando hojas de trabajo…'); try { const r = await Cloud.pushSheets(); toast(`Hojas de trabajo actualizadas (${r.hojas})`, 'success'); syncStatus(); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Error al generar hojas: ' + e.message, 'error'); } } }, 'Generar hojas de trabajo'),
         ),
         h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '12px' } }, 'Respaldo local (sin nube):'),
         h('div', { class: 'btn-row', style: { marginTop: '4px' } },
@@ -1582,7 +1598,7 @@
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);
-    if (Cloud.auto && Cloud.url) { setTimeout(() => { Cloud.pull().then(r => { if (r && r.ok) { renderView(); refreshChrome(); toast('Sincronizado desde Google Sheets', 'success'); } }).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 400); }
+    if (Cloud.auto && Cloud.connected) { setTimeout(() => { Cloud.pull().then(r => { if (r && r.ok) { renderView(); refreshChrome(); toast('Sincronizado desde Google Sheets', 'success'); } }).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 400); }
 
     window.addEventListener('hashchange', () => { fromHash(); renderView(); syncNav(); });
     document.addEventListener('keydown', e => {
