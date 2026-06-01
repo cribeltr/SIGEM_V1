@@ -36,6 +36,8 @@
     eventos: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
     asignaciones: 'M7 3v4M17 3v4M3 9h18M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z',
     conciliacion: 'M18 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 24a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 18V9a3 3 0 0 1 3-3h6',
+    cumplimiento: 'M3 3v18h18M7 16l4-5 3 3 5-7',
+    audit: 'M3 5h13M3 10h13M3 15h7M19 13l2 2-4 4-2-1 1-3z',
     search: 'M21 21l-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z',
     plus: 'M12 5v14M5 12h14', sun: 'M12 3v2M12 19v2M5 5l1.4 1.4M17.6 17.6L19 19M3 12h2M19 12h2M5 19l1.4-1.4M17.6 6.4L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', menu: 'M3 6h18M3 12h18M3 18h18',
@@ -123,6 +125,7 @@
     { id: 'ciclos', label: 'Ciclos', icon: 'ciclos' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
     { id: 'asignaciones', label: 'Asignaciones MP', icon: 'asignaciones' },
+    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
     { id: 'conciliacion', label: 'Conciliación', icon: 'conciliacion' }
   ];
   let view = 'inicio', params = {};
@@ -367,7 +370,7 @@
         h('button', { class: 'btn sm', onclick: () => formAsignarEncargado(eq) }, 'Encargado'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
-    const tabsDef = [['resumen', 'Resumen'], ['matriz', 'Matriz MP'], ['bitacora', 'Bitácora'], ['ciclos', 'Ciclos'], ['pendientes', 'Pendientes', pends.length], ['conflictos', 'Conflictos', confs.length]];
+    const tabsDef = [['resumen', 'Resumen'], ['matriz', 'Matriz MP'], ['bitacora', 'Bitácora'], ['ciclos', 'Ciclos'], ['pendientes', 'Pendientes', pends.length], ['conflictos', 'Conflictos', confs.length], ['auditoria', 'Auditoría']];
     const tabs = h('div', { class: 'tabs' }, ...tabsDef.map(([id, lbl, n]) =>
       h('button', { class: tab === id ? 'on' : '', onclick: () => go('equipo', { inv: eq.inv, tab: id }) }, lbl, n ? h('span', { class: 'badge-count' }, n) : null)));
 
@@ -378,6 +381,7 @@
     else if (tab === 'ciclos') mount(body, tabCiclos(eq));
     else if (tab === 'pendientes') mount(body, tabPendientes(eq));
     else if (tab === 'conflictos') mount(body, tabConflictos(eq));
+    else if (tab === 'auditoria') mount(body, tabAuditoria(eq));
 
     const dias = H.diasEnEstado(eq);
     const banner = (eq.estado !== 'operativo' && eq.estado !== 'baja' && eq.estado !== 'desconocido')
@@ -450,6 +454,36 @@
     const cs = H.conflictosDe(eq.inv);
     if (!cs.length) return h('div', { class: 'empty' }, 'Sin conflictos pendientes con el maestro');
     return h('div', { class: 'row-list' }, ...cs.map(c => conflictoRow(c)));
+  }
+  // Reúne las entradas de auditoría que afectan a un equipo (equipo + sus eventos,
+  // pendientes, tareas y ciclos) y las muestra como historial de cambios.
+  function auditoriaDe(eq) {
+    const S = H.getState();
+    const evIds = new Set(S.eventos.filter(e => e.inv === eq.inv).map(e => e.id));
+    const pendIds = new Set(S.pendientes.filter(p => p.inv === eq.inv).map(p => p.id));
+    const tareaIds = new Set(S.tareas.filter(t => pendIds.has(t.pendId)).map(t => t.id));
+    const folios = new Set(S.ciclos.filter(c => c.inv === eq.inv).map(c => c.folio));
+    return (S.audit || []).filter(a =>
+      (a.entidad === 'equipo' && a.idEnt === eq.inv) ||
+      (a.entidad === 'evento' && evIds.has(a.idEnt)) ||
+      (a.entidad === 'pendiente' && pendIds.has(a.idEnt)) ||
+      (a.entidad === 'tarea' && tareaIds.has(a.idEnt)) ||
+      (a.entidad === 'ciclo' && folios.has(a.idEnt))
+    ).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  }
+  function tabAuditoria(eq) {
+    const list = auditoriaDe(eq);
+    const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo' };
+    const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
+    const v = x => (x === null || x === undefined || x === '') ? '—' : (x === false ? 'No' : x === true ? 'Sí' : String(x));
+    return h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Historial de cambios'), h('span', { class: 's-sub' }, `${list.length} registro(s)`)),
+      h('div', { class: 's-bd flush' }, list.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Fecha / hora'), h('th', {}, 'Entidad'), h('th', {}, 'Campo'), h('th', {}, 'Antes'), h('th', {}, 'Después'), h('th', {}, 'Usuario'))),
+        h('tbody', {}, ...list.slice(0, 400).map(a => h('tr', {},
+          h('td', { class: 'muted' }, fhora(a.ts)), h('td', {}, h('span', { class: 'tag' }, ENT[a.entidad] || a.entidad)),
+          h('td', {}, a.campo || '—'), h('td', { class: 'muted' }, v(a.valorAnterior)), h('td', {}, v(a.valorNuevo)), h('td', { class: 'muted' }, a.usuario || '—'))))))
+        : h('div', { class: 'empty' }, 'Sin cambios registrados para este equipo')));
   }
 
   // ---- PENDIENTES ---------------------------------------------------------
@@ -698,6 +732,62 @@
       h('button', { class: 'btn primary', onclick: () => { const S = H.getState(); S.asignacionesMP = S.asignacionesMP || {}; S.asignacionesMP[km] = S.asignacionesMP[km] || {}; invs.forEach(inv => { if (ejec.value) S.asignacionesMP[km][inv] = ejec.value; else delete S.asignacionesMP[km][inv]; }); H.save(); toast(`Responsable asignado a ${invs.length} equipos`, 'success'); closeDrawer(); } }, `Asignar a ${invs.length}`)]
     });
   }
+
+  // ---- CUMPLIMIENTO POR SERVICIO -----------------------------------------
+  VIEWS.cumplimiento = function () {
+    const S = H.getState();
+    let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
+    const wrap = h('div', {});
+    function filasPorServicio() {
+      const servicios = [...new Set(S.equipos.map(e => e.servicio || '(sin servicio)'))].sort();
+      return servicios.map(sv => {
+        const es = S.equipos.filter(e => (e.servicio || '(sin servicio)') === sv);
+        const vivos = es.filter(e => e.estado !== 'baja');
+        const op = es.filter(e => e.estado === 'operativo').length;
+        const no = es.filter(e => e.estado === 'no_operativo').length;
+        const stc = es.filter(e => e.estado === 'en_servicio_tecnico').length;
+        const prog = vivos.filter(e => H.mpProgramadaEnMes(e, MESES[m]));
+        const ejec = prog.filter(e => H.mpDelMesEjecutada(e, y, m)).length;
+        const atr = vivos.filter(e => [...Array(m).keys()].some(mm => H.mpProgramadaEnMes(e, MESES[mm]) && H.mpEstadoMes(e, y, mm) === 'pendiente')).length;
+        const pend = es.reduce((a, e) => a + H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, 0);
+        const pctMP = prog.length ? Math.round(ejec / prog.length * 100) : null;
+        const pctOp = vivos.length ? Math.round(op / vivos.length * 100) : null;
+        return { sv, total: es.length, vivos: vivos.length, op, no, stc, prog: prog.length, ejec, atr, pend, pctMP, pctOp };
+      });
+    }
+    function pctPill(v) { if (v == null) return h('span', { class: 'faint' }, '—'); return h('span', { class: 'pill ' + (v >= 90 ? 'op' : v >= 60 ? 'st' : 'noop') }, v + '%'); }
+    function bar(v) { return h('div', { class: 'progress', style: { minWidth: '70px' } }, h('i', { style: { width: (v || 0) + '%', background: v == null ? 'var(--surface-3)' : v >= 90 ? 'var(--op)' : v >= 60 ? 'var(--st)' : 'var(--noop)' } })); }
+    function render() {
+      const rows = filasPorServicio();
+      const tot = rows.reduce((a, r) => ({ total: a.total + r.total, vivos: a.vivos + r.vivos, op: a.op + r.op, no: a.no + r.no, stc: a.stc + r.stc, prog: a.prog + r.prog, ejec: a.ejec + r.ejec, atr: a.atr + r.atr, pend: a.pend + r.pend }), { total: 0, vivos: 0, op: 0, no: 0, stc: 0, prog: 0, ejec: 0, atr: 0, pend: 0 });
+      const totPctMP = tot.prog ? Math.round(tot.ejec / tot.prog * 100) : null;
+      const totPctOp = tot.vivos ? Math.round(tot.op / tot.vivos * 100) : null;
+      const fila = (r, isTot) => h('tr', { class: isTot ? '' : '', style: isTot ? { fontWeight: 700, background: 'var(--surface-2)' } : null, onclick: isTot ? null : () => go('equipos', { servicio: r.sv }) },
+        h('td', {}, isTot ? 'TOTAL' : r.sv), h('td', { class: 'num' }, r.total),
+        h('td', { class: 'num' }, r.op), h('td', { class: 'num', style: r.no ? { color: 'var(--noop)' } : null }, r.no), h('td', { class: 'num', style: r.stc ? { color: 'var(--st)' } : null }, r.stc),
+        h('td', {}, pctPill(isTot ? totPctOp : r.pctOp)),
+        h('td', { class: 'num' }, r.prog ? (r.ejec + '/' + r.prog) : '—'),
+        h('td', { style: { minWidth: '130px' } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(isTot ? totPctMP : r.pctMP), pctPill(isTot ? totPctMP : r.pctMP))),
+        h('td', { class: 'num', style: r.atr ? { color: 'var(--noop)' } : null }, r.atr || '—'),
+        h('td', { class: 'num' }, r.pend || '—'));
+      mount(wrap, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Servicio'), h('th', { class: 'num' }, 'Equipos'), h('th', { class: 'num' }, 'Oper.'), h('th', { class: 'num' }, 'No op.'), h('th', { class: 'num' }, 'ST'), h('th', {}, '% Operativo'), h('th', {}, `MP ${MES_ESP(m)}`), h('th', {}, '% Cumplimiento MP'), h('th', { class: 'num' }, 'Atrasadas'), h('th', { class: 'num' }, 'Pend.'))),
+        h('tbody', {}, ...rows.map(r => fila(r)), fila(tot, true)))));
+    }
+    function exportar() {
+      const rows = filasPorServicio().map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
+      exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `SIGEM_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
+    }
+    const root = h('div', {},
+      h('div', { class: 'filterbar' },
+        field(null, selectEl(MESES.map((mm, i) => [i, MES_ESP(i)]), m, { onchange: e => { m = +e.target.value; render(); } })),
+        field(null, selectEl([YEAR + 1, YEAR, YEAR - 1].map(yy => [yy, yy]), y, { onchange: e => { y = +e.target.value; render(); } })),
+        h('span', { class: 'count-note', style: { marginLeft: '0' } }, 'Clic en un servicio para ver sus equipos'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: exportar }, svg(ic.dl, 14), 'Exportar')),
+      wrap);
+    render(); return root;
+  };
 
   // ---- CONCILIACIÓN -------------------------------------------------------
   VIEWS.conciliacion = function () {
@@ -1196,7 +1286,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', conciliacion: 'Conciliación' };
+    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', conciliacion: 'Conciliación' };
     $('#tb-title').textContent = titles[view] || 'SIGEM';
   }
 
@@ -1205,6 +1295,20 @@
   window.MES_ESP = MES_ESP; // usado por algunas vistas
 
   function applyTheme(t) { document.documentElement.setAttribute('data-theme', t); localStorage.setItem('sigem_theme', t); const b = $('#btn-theme'); if (b) mount(b, svg(t === 'dark' ? ic.sun : ic.moon, 16)); }
+
+  // Recordatorio automático al abrir la app: avisa de pendientes vencidos y
+  // recordatorios (proxRecord) para hoy, con acceso directo a revisarlos.
+  function recordatoriosAlAbrir() {
+    const S = H.getState(); const hoy = H.hoyLocal();
+    const act = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const vencidos = act.filter(p => p.fechaComp && p.fechaComp < hoy).length;
+    const recordHoy = act.filter(p => p.proxRecord && p.proxRecord <= hoy).length;
+    if (!vencidos && !recordHoy) return;
+    const partes = [];
+    if (vencidos) partes.push(`${vencidos} pendiente${vencidos !== 1 ? 's' : ''} vencido${vencidos !== 1 ? 's' : ''}`);
+    if (recordHoy) partes.push(`${recordHoy} recordatorio${recordHoy !== 1 ? 's' : ''} para hoy`);
+    toast('⏰ ' + partes.join(' · '), 'warn-backup', { label: 'Revisar', run: () => go('pendientes', (recordHoy && !vencidos) ? { record: 1 } : { vencidos: 1 }) });
+  }
 
   // ============================ BOOT ========================================
   function boot() {
@@ -1236,6 +1340,7 @@
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
     fromHash();
     renderView(); syncNav(); refreshChrome();
+    setTimeout(recordatoriosAlAbrir, 600);
 
     window.addEventListener('hashchange', () => { fromHash(); renderView(); syncNav(); });
     document.addEventListener('keydown', e => {

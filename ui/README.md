@@ -75,6 +75,16 @@ interfaz sincronizada con el estado.
 
 Funciones para gestionar, no solo registrar:
 
+- **Recordatorios automáticos al abrir**: al cargar la app avisa (toast con acceso
+  directo) de *pendientes vencidos* y *recordatorios para hoy* (`proxRecord`).
+- **Auditoría por equipo**: pestaña *Auditoría* en la ficha con el **historial de
+  cambios** (equipo, eventos, pendientes, tareas y ciclos): fecha/hora, campo,
+  antes → después y usuario.
+- **Cumplimiento por servicio** (vista nueva en el menú): tabla por servicio con
+  equipos, estado (op/no-op/ST), **% operativo**, **MP del mes (ej/prog)**,
+  **% cumplimiento MP** con barra, **MP atrasadas** y pendientes, con fila TOTAL,
+  selector de mes/año, clic al detalle y *Exportar*.
+
 - **Encargado del equipo**: ahora se puede **asignar explícitamente** (en la ficha,
   botón *Encargado*, o **en lote** seleccionando equipos en la lista). El motor lo
   prioriza sobre el derivado (ciclo/último ejecutor).
