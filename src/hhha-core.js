@@ -1493,6 +1493,7 @@
     state = migrate(data);
     normalizarEquipos();
     reconstruirCiclos();
+    normalizarTiposEvento();
     state.__userActions = state.__userActions || 0;
     save();
     UI.onChange();
@@ -1625,11 +1626,41 @@
     return n;
   }
 
+  // Normaliza etiquetas de tipo de evento de versiones previas (p. ej.
+  // "Envío a Serv. Técnico" → "Envío a servicio técnico"). Idempotente.
+  function normalizarTiposEvento() {
+    const canon = TIPOS_EVENTO.map(t => t.label);
+    const key = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/serv\./g, 'servicio').replace(/\s+/g, ' ').trim();
+    const byKey = {}; canon.forEach(c => byKey[key(c)] = c);
+    let n = 0;
+    state.eventos.forEach(ev => {
+      if (!ev.tipo || canon.indexOf(ev.tipo) >= 0) return;
+      const c = byKey[key(ev.tipo)];
+      if (c && c !== ev.tipo) { audit('evento', ev.id, 'tipo', ev.tipo, c); ev.tipo = c; n++; }
+    });
+    return n;
+  }
+  // Devuelve un Set con los IDs de eventos MP DUPLICADOS (el 2º+ del mismo equipo y mes).
+  function idsMPDuplicadas() {
+    const seen = {}, dup = new Set();
+    state.eventos.filter(e => !e.anulado && e.tipo === 'Mantención preventiva' && e.fecha)
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.id - b.id))
+      .forEach(e => { const k = e.inv + '|' + e.fecha.slice(0, 7); if (seen[k]) dup.add(e.id); else seen[k] = e.id; });
+    return dup;
+  }
+  // Oficializa en bloque todos los eventos en borrador (no anulados). Devuelve cuántos.
+  function oficializarTodosBorradores() {
+    let n = 0;
+    state.eventos.forEach(ev => { if (!ev.anulado && ev.oficial !== 'Sí') { ev.oficial = 'Sí'; ev.ts = new Date().toISOString(); audit('evento', ev.id, 'oficial', 'No', 'Sí (oficialización masiva)'); n++; } });
+    return n;
+  }
+
   function bootstrapDatos() {
     state = load();
     if (state) {
       let cambios = limpiarEfectosAnulados();
       cambios += reconstruirCiclos();          // reconstruye ciclos si el backup no los trae
+      cambios += normalizarTiposEvento();      // normaliza etiquetas antiguas de tipo
       if (cambios > 0) {
         save({ internal: true });
         UI.notify(`Migración: ${cambios} ajuste${cambios > 1 ? 's' : ''} de consistencia aplicado${cambios > 1 ? 's' : ''}.`, 'success');
@@ -1658,7 +1689,7 @@
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
-    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, bootstrapDatos,
+    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
     // utilidades
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)

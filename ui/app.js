@@ -650,12 +650,14 @@
   // ---- EVENTOS (bitácora global) ------------------------------------------
   VIEWS.eventos = function () {
     const S = H.getState();
-    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '', desde: '', hasta: '' };
+    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '', desde: '', hasta: '', dup: !!params.dup };
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
+    const dupSet = H.idsMPDuplicadas();
     function data() {
       let list = S.eventos.slice();
       if (!f.anulados) list = list.filter(e => !e.anulado);
+      if (f.dup) list = list.filter(e => dupSet.has(e.id));
       if (f.tipo) list = list.filter(e => e.tipo === f.tipo);
       if (f.oficial) list = list.filter(e => (e.oficial === 'Sí') === (f.oficial === 'si'));
       if (f.ejec) list = list.filter(e => (f.ejec === '__none' ? !e.ejecutor : e.ejecutor === f.ejec));
@@ -674,6 +676,7 @@
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.desde = e.target.value; render(); } }),
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.hasta = e.target.value; render(); } }),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.dup ? true : false, onchange: e => { f.dup = e.target.checked; render(); } }), 'Solo duplicadas'),
         h('div', { class: 'tb-spacer' }),
         h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `SIGEM_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
@@ -681,12 +684,14 @@
     render(); return root;
   };
   function eventosTable(list, compact) {
+    const dup = H.idsMPDuplicadas();
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Fecha'), !compact ? h('th', {}, 'N° Inv.') : null, h('th', {}, 'Tipo'), h('th', {}, 'Resultado'), h('th', {}, 'Estado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Folio'), h('th', {}, 'Observación'), h('th', {}, ''), h('th', { class: 'shrink' }, ''))),
       h('tbody', {}, ...list.map(e => h('tr', { class: e.anulado ? '' : '', style: e.anulado ? { opacity: .5 } : null },
         h('td', {}, fmtFecha(e.fecha)),
         !compact ? h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv) : null,
-        h('td', {}, H.etiquetaTipoEvento(e)), h('td', { class: 'mono' }, e.resultado || '—'),
+        h('td', {}, H.etiquetaTipoEvento(e), dup.has(e.id) ? h('span', { class: 'tag', style: { marginLeft: '5px', color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' }, title: 'Hay otra MP del mismo equipo en este mes' }, 'duplicada') : null),
+        h('td', { class: 'mono' }, e.resultado || '—'),
         h('td', {}, e.estado ? estadoPill(e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico')) : '—'),
         h('td', { class: 'muted' }, e.ejecutor || '—'), h('td', { class: 'mono faint' }, e.folio || '—'),
         h('td', { class: 'wrap', title: e.obs || '' }, e.obs ? e.obs : h('span', { class: 'faint' }, '—')),
@@ -1299,6 +1304,27 @@
         h('div', { class: 'btn-row', style: { marginTop: '4px' } },
           h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar backup JSON'),
           h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar backup JSON')))));
+    // ---- Mantenimiento de datos (limpieza en una pasada) ----
+    const S = H.getState();
+    const nBorr = () => S.eventos.filter(e => !e.anulado && e.oficial !== 'Sí').length;
+    const nConf = () => (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto').length;
+    const nDup = () => H.idsMPDuplicadas().size;
+    const maint = h('div', { class: 's-bd' });
+    const renderMaint = () => mount(maint,
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn', onclick: () => { const n = nBorr(); if (!n) return toast('No hay borradores', 'success'); if (!window.confirm(`¿Oficializar ${n} evento(s) en borrador?`)) return; const k = H.oficializarTodosBorradores(); H.save(); toast(`${k} eventos oficializados`, 'success'); renderMaint(); refreshChrome(); } }, `Oficializar borradores (${nBorr()})`),
+        h('button', { class: 'btn', onclick: () => go('eventos', { dup: 1 }) }, `Ver MP duplicadas (${nDup()})`),
+        h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
+        h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos')),
+      h('div', { class: 'faint', style: { fontSize: '11.5px', margin: '12px 0 4px' } }, `Conflictos de conciliación pendientes: ${nConf()}`),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn sm', onclick: () => { const cs = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto'); if (!cs.length) return toast('Sin conflictos', 'success'); if (!window.confirm(`¿Aceptar el maestro en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'aceptar_maestro', null, { skipSave: true })); H.save(); toast(`${cs.length} conflictos resueltos (maestro)`, 'success'); renderMaint(); refreshChrome(); } }, 'Resolver todo: aceptar maestro'),
+        h('button', { class: 'btn sm', onclick: () => { const cs = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto'); if (!cs.length) return toast('Sin conflictos', 'success'); if (!window.confirm(`¿Mantener el programa en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'mantener_programa', null, { skipSave: true })); H.save(); toast(`${cs.length} conflictos resueltos (programa)`, 'success'); renderMaint(); refreshChrome(); } }, 'Resolver todo: mantener programa'),
+        h('button', { class: 'btn sm ghost', onclick: () => go('conciliacion') }, 'Revisar uno por uno →')));
+    renderMaint();
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')),
+      maint));
     return root;
   };
 
