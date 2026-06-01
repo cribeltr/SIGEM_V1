@@ -113,9 +113,20 @@ function writeMeta(k, val) {
   sh.clear(); sh.getRange(1, 1, v.length, 2).setValues(v); sh.hideSheet();
 }
 
-// Escribe las hojas de trabajo legibles que envía la app: [{name, rows:[[...]], hidden}]
+/* ESTRUCTURA DEL LIBRO (se aplica en cada sincronización)
+ *   · Hojas de TRABAJO (Inicio, Inventario, Plan anual MP…, Hoja de ruta…,
+ *     Pendientes, Bitácora): VISIBLES y ordenadas al frente, en el orden que
+ *     envía la app, con la fila de encabezado fija y en negrita.
+ *   · Hojas de SISTEMA (las que empiezan con "_": _SIGEM_DATA, _SIGEM_META):
+ *     OCULTAS. Guardan el estado comprimido y los metadatos; no editarlas.
+ *   · La hoja por defecto vacía que crea Google ("Hoja 1"/"Sheet1") se elimina.
+ */
+function isSystem(name) { return String(name).charAt(0) === '_'; }
+
+// Escribe las hojas de trabajo legibles que envía la app: [{name, rows, hidden, headerRow}]
 function writeSheets(sheets) {
-  sheets.forEach(function (spec) {
+  var order = [];
+  (sheets || []).forEach(function (spec) {
     if (!spec || !spec.name) return;
     var sh = sheetByName(spec.name, true);
     sh.clear();
@@ -125,12 +136,58 @@ function writeSheets(sheets) {
       rows.forEach(function (r) { if (r.length > maxc) maxc = r.length; });
       var norm = rows.map(function (r) { var a = r.slice(); while (a.length < maxc) a.push(''); return a; });
       sh.getRange(1, 1, norm.length, maxc).setValues(norm);
-      sh.setFrozenRows(spec.headerRow || 1);
+      var hr = (spec.headerRow != null) ? spec.headerRow : 1;
+      sh.setFrozenRows(hr);
+      if (hr >= 1) sh.getRange(1, 1, 1, maxc).setFontWeight('bold');
     }
-    if (spec.hidden || spec.name.charAt(0) === '_') sh.hideSheet(); else sh.showSheet();
+    if (spec.hidden || isSystem(spec.name)) sh.hideSheet();
+    else { sh.showSheet(); order.push(spec.name); }
+  });
+  arrangeWorkbook(order);
+}
+
+// Deja las hojas de trabajo (en 'order') visibles y al frente, y las de sistema
+// ocultas. Elimina la hoja por defecto vacía y garantiza ≥1 hoja visible.
+function arrangeWorkbook(order) {
+  var spread = ss(); order = order || [];
+  pruneDefaultSheet(order);
+  // 1) Hojas de trabajo al frente (están visibles → se pueden activar/mover).
+  var pos = 1;
+  order.forEach(function (name) {
+    var sh = spread.getSheetByName(name);
+    if (!sh) return;
+    sh.showSheet(); spread.setActiveSheet(sh); spread.moveActiveSheet(pos++);
+  });
+  // 2) Ocultar las de sistema (al estar ocultas su posición es indiferente).
+  spread.getSheets().forEach(function (sh) {
+    if (isSystem(sh.getName())) { try { sh.hideSheet(); } catch (e) {} }
+  });
+  ensureVisible();
+}
+
+// Compatibilidad: ordena/oculta sistema sin reposicionar las de trabajo.
+function hideSystemSheets() { arrangeWorkbook(); }
+
+// Borra la hoja por defecto vacía ("Hoja 1"/"Sheet1"…) que no sea de trabajo ni de sistema.
+function pruneDefaultSheet(order) {
+  var spread = ss();
+  var keep = {}; (order || []).forEach(function (n) { keep[n] = true; });
+  var DEFAULTS = ['Hoja 1', 'Hoja1', 'Hoja de cálculo 1', 'Sheet1', 'Sheet', 'Sin título', 'Untitled'];
+  spread.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (keep[name] || isSystem(name)) return;
+    if (DEFAULTS.indexOf(name) === -1) return;
+    if (sh.getLastRow() === 0 && sh.getLastColumn() === 0 && spread.getSheets().length > 1) {
+      try { spread.deleteSheet(sh); } catch (e) {}
+    }
   });
 }
 
-function hideSystemSheets() {
-  ss().getSheets().forEach(function (sh) { if (sh.getName().charAt(0) === '_') sh.hideSheet(); });
+// Sheets no permite ocultar todas las hojas: asegura que quede una visible.
+function ensureVisible() {
+  var sheets = ss().getSheets();
+  if (!sheets.length || sheets.some(function (sh) { return !sh.isSheetHidden(); })) return;
+  var target = null;
+  for (var i = 0; i < sheets.length; i++) { if (!isSystem(sheets[i].getName())) { target = sheets[i]; break; } }
+  (target || sheets[0]).showSheet();
 }
