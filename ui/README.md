@@ -75,6 +75,16 @@ interfaz sincronizada con el estado.
 
 Funciones para gestionar, no solo registrar:
 
+- **Tendencia mensual de cumplimiento MP**: mini-gráfico de barras (% MP por mes
+  del año) en *Cumplimiento*; clic en un mes lo selecciona.
+- **Indicadores por responsable** (en *Cumplimiento*, modo *Por responsable*):
+  pendientes abiertos, vencidos, MP ejecutadas (mes/año), eventos del año y
+  equipos a cargo; clic → pendientes del responsable. Exportable.
+- **Notas / observaciones por equipo**: panel en la ficha (Resumen) para agregar
+  notas libres con autor y fecha (historial), auditadas.
+- **Filtro por rango de fechas** (Desde / Hasta) en **Bitácora** (+ Exportar) y en
+  la pestaña **Auditoría** de la ficha.
+
 - **Recordatorios automáticos al abrir**: al cargar la app avisa (toast con acceso
   directo) de *pendientes vencidos* y *recordatorios para hoy* (`proxRecord`).
 - **Auditoría por equipo**: pestaña *Auditoría* en la ficha con el **historial de

@@ -235,6 +235,16 @@ td.shrink { width: 1%; }
 .kpi .k-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .progress { height: 7px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
 .progress > i { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width .2s; }
+/* mini bar chart (tendencia) */
+.trend { display: flex; gap: 6px; align-items: flex-end; }
+.trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.trend-col.on .trend-lbl { color: var(--accent); font-weight: 700; }
+.trend-col:hover .trend-bar { filter: brightness(1.12); }
+.trend-val { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trend-bar-wrap { width: 72%; height: 84px; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 4px 4px 0 0; }
+.trend-bar { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; transition: height .2s; }
+.trend-bar.op { background: var(--op); } .trend-bar.st { background: var(--st); } .trend-bar.noop { background: var(--noop); }
+.trend-lbl { font-size: 10px; color: var(--faint); }
 
 .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
 .section > .s-hd { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-bottom: 1px solid var(--border); }

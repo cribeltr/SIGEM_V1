@@ -407,7 +407,20 @@
               h('button', { class: 'btn sm', style: { marginTop: '9px' }, onclick: () => { const m = window.prompt('Justificación del cierre manual:'); if (m) { H.cerrarCicloManual(ciclosAb[0], m); } } }, 'Cerrar ciclo'))
             : h('div', { class: 'faint' }, 'Sin ciclo abierto'))),
         h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, `MP ${YEAR}`)),
-          h('div', { class: 's-bd' }, miniGantt(eq, YEAR)))));
+          h('div', { class: 's-bd' }, miniGantt(eq, YEAR))),
+        notasPanel(eq)));
+  }
+  function notasPanel(eq) {
+    const box = h('div', {});
+    const render = () => {
+      const ns = H.notasDe(eq).slice().reverse();
+      mount(box, ns.length ? h('div', { class: 'row-list' }, ...ns.map(n => h('div', { class: 'mini-row', style: { display: 'block' } },
+        h('div', { class: 'm-meta' }, h('b', {}, n.autor), ' · ', fmtFecha(n.fecha)), h('div', { class: 'm-txt' }, n.texto)))) : h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Sin notas.'));
+    };
+    render();
+    const input = h('input', { type: 'text', placeholder: 'Agregar nota + Enter', onkeydown: e => { if (e.key === 'Enter' && e.target.value.trim()) { H.agregarNotaEquipo(eq, e.target.value); H.save(); e.target.value = ''; render(); } } });
+    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Notas del equipo'), h('span', { class: 's-sub' }, H.notasDe(eq).length || '')),
+      h('div', { class: 's-bd' }, box, h('div', { style: { marginTop: '7px' } }, input)));
   }
   function tabMatriz(eq) {
     const yearSel = selectEl([YEAR + 1, YEAR, YEAR - 1, YEAR - 2].map(y => [y, y]), params.year || YEAR, { onchange: e => { params.year = +e.target.value; mount($('#view'), VIEWS.equipo()); } });
@@ -472,18 +485,27 @@
     ).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
   }
   function tabAuditoria(eq) {
-    const list = auditoriaDe(eq);
+    const all = auditoriaDe(eq);
     const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo' };
     const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
     const v = x => (x === null || x === undefined || x === '') ? '—' : (x === false ? 'No' : x === true ? 'Sí' : String(x));
-    return h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Historial de cambios'), h('span', { class: 's-sub' }, `${list.length} registro(s)`)),
-      h('div', { class: 's-bd flush' }, list.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+    let desde = '', hasta = '';
+    const body = h('div', { class: 's-bd flush' }); const cnt = h('span', { class: 's-sub' });
+    function render() {
+      const list = all.filter(a => { const d = (a.ts || '').slice(0, 10); return (!desde || d >= desde) && (!hasta || d <= hasta); });
+      cnt.textContent = `${list.length} registro(s)`;
+      mount(body, list.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Fecha / hora'), h('th', {}, 'Entidad'), h('th', {}, 'Campo'), h('th', {}, 'Antes'), h('th', {}, 'Después'), h('th', {}, 'Usuario'))),
-        h('tbody', {}, ...list.slice(0, 400).map(a => h('tr', {},
+        h('tbody', {}, ...list.slice(0, 500).map(a => h('tr', {},
           h('td', { class: 'muted' }, fhora(a.ts)), h('td', {}, h('span', { class: 'tag' }, ENT[a.entidad] || a.entidad)),
-          h('td', {}, a.campo || '—'), h('td', { class: 'muted' }, v(a.valorAnterior)), h('td', {}, v(a.valorNuevo)), h('td', { class: 'muted' }, a.usuario || '—'))))))
-        : h('div', { class: 'empty' }, 'Sin cambios registrados para este equipo')));
+          h('td', {}, a.campo || '—'), h('td', { class: 'muted' }, v(a.valorAnterior)), h('td', {}, v(a.valorNuevo)), h('td', { class: 'muted' }, a.usuario || '—')))))) : h('div', { class: 'empty' }, 'Sin cambios en el rango'));
+    }
+    render();
+    return h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Historial de cambios'), cnt, h('div', { class: 'tb-spacer' }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { desde = e.target.value; render(); } }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { hasta = e.target.value; render(); } })),
+      body);
   }
 
   // ---- PENDIENTES ---------------------------------------------------------
@@ -613,7 +635,7 @@
   // ---- EVENTOS (bitácora global) ------------------------------------------
   VIEWS.eventos = function () {
     const S = H.getState();
-    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '' };
+    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '', desde: '', hasta: '' };
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
     function data() {
@@ -622,6 +644,8 @@
       if (f.tipo) list = list.filter(e => e.tipo === f.tipo);
       if (f.oficial) list = list.filter(e => (e.oficial === 'Sí') === (f.oficial === 'si'));
       if (f.ejec) list = list.filter(e => (f.ejec === '__none' ? !e.ejecutor : e.ejecutor === f.ejec));
+      if (f.desde) list = list.filter(e => e.fecha && e.fecha >= f.desde);
+      if (f.hasta) list = list.filter(e => e.fecha && e.fecha <= f.hasta);
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.ejecutor} ${e.folio} ${e.obs}`).includes(q)); }
       return list.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 600);
     }
@@ -632,7 +656,11 @@
         selectEl([['', 'Todo tipo'], ...tipos.map(t => [t, t])], '', { onchange: e => { f.tipo = e.target.value; render(); } }),
         selectEl([['', 'Oficial: todos'], ['si', 'Sólo oficiales'], ['no', 'Sólo borradores']], f.oficial, { onchange: e => { f.oficial = e.target.value; render(); } }),
         selectEl([['', 'Todo ejecutor'], ['__none', 'Sin ejecutor'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.desde = e.target.value; render(); } }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { f.hasta = e.target.value; render(); } }),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `SIGEM_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
       wrap);
     render(); return root;
@@ -737,7 +765,21 @@
   VIEWS.cumplimiento = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
-    const wrap = h('div', {});
+    let modo = 'servicio';
+    const wrap = h('div', {}); const trendBox = h('div', {});
+    function filasPorResponsable() {
+      const cargo = {};
+      S.equipos.forEach(e => { const en = H.encargadoDe(e); if (en) cargo[en] = (cargo[en] || 0) + 1; });
+      const esMP = (e, periodoAno, mes) => !e.anulado && e.tipo === 'Mantención preventiva' && e.resultado === 'Si' && e.fecha && new Date(e.fecha + 'T00:00:00').getFullYear() === y && (mes == null || new Date(e.fecha + 'T00:00:00').getMonth() === mes);
+      return EJECUTORES.map(ej => {
+        const pend = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado' && p.ejecutor === ej);
+        const venc = pend.filter(p => p.fechaComp && p.fechaComp < H.hoyLocal()).length;
+        const mpMes = S.eventos.filter(e => e.ejecutor === ej && esMP(e, y, m)).length;
+        const mpAno = S.eventos.filter(e => e.ejecutor === ej && esMP(e, y, null)).length;
+        const evAno = S.eventos.filter(e => !e.anulado && e.ejecutor === ej && e.fecha && e.fecha.startsWith(String(y))).length;
+        return { ej, pend: pend.length, venc, mpMes, mpAno, evAno, cargo: cargo[ej] || 0 };
+      }).sort((a, b) => b.pend - a.pend || b.mpAno - a.mpAno);
+    }
     function filasPorServicio() {
       const servicios = [...new Set(S.equipos.map(e => e.servicio || '(sin servicio)'))].sort();
       return servicios.map(sv => {
@@ -757,12 +799,28 @@
     }
     function pctPill(v) { if (v == null) return h('span', { class: 'faint' }, '—'); return h('span', { class: 'pill ' + (v >= 90 ? 'op' : v >= 60 ? 'st' : 'noop') }, v + '%'); }
     function bar(v) { return h('div', { class: 'progress', style: { minWidth: '70px' } }, h('i', { style: { width: (v || 0) + '%', background: v == null ? 'var(--surface-3)' : v >= 90 ? 'var(--op)' : v >= 60 ? 'var(--st)' : 'var(--noop)' } })); }
-    function render() {
+    function renderTrend() {
+      const meses = MESES.map((mm, i) => {
+        const prog = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, mm));
+        const ejec = prog.filter(e => H.mpDelMesEjecutada(e, y, i)).length;
+        return { mm, i, prog: prog.length, ejec, pct: prog.length ? Math.round(ejec / prog.length * 100) : null };
+      });
+      mount(trendBox, h('div', { class: 'section', style: { marginBottom: '12px' } },
+        h('div', { class: 's-hd' }, h('h3', {}, `Tendencia mensual de cumplimiento MP · ${y}`), h('span', { class: 's-sub' }, 'Clic en un mes')),
+        h('div', { class: 's-bd' }, h('div', { class: 'trend' }, ...meses.map(mo => {
+          const cls = mo.pct == null ? '' : mo.pct >= 90 ? 'op' : mo.pct >= 60 ? 'st' : 'noop';
+          return h('div', { class: 'trend-col' + (mo.i === m ? ' on' : ''), title: `${mo.mm} ${y}: ${mo.pct == null ? 'sin programación' : mo.pct + '% · ' + mo.ejec + '/' + mo.prog}`, onclick: () => { m = mo.i; render(); } },
+            h('div', { class: 'trend-val' }, mo.pct == null ? '—' : mo.pct + '%'),
+            h('div', { class: 'trend-bar-wrap' }, h('div', { class: 'trend-bar ' + cls, style: { height: (mo.pct || 0) + '%' } })),
+            h('div', { class: 'trend-lbl' }, mo.mm));
+        })))));
+    }
+    function renderServicio() {
       const rows = filasPorServicio();
       const tot = rows.reduce((a, r) => ({ total: a.total + r.total, vivos: a.vivos + r.vivos, op: a.op + r.op, no: a.no + r.no, stc: a.stc + r.stc, prog: a.prog + r.prog, ejec: a.ejec + r.ejec, atr: a.atr + r.atr, pend: a.pend + r.pend }), { total: 0, vivos: 0, op: 0, no: 0, stc: 0, prog: 0, ejec: 0, atr: 0, pend: 0 });
       const totPctMP = tot.prog ? Math.round(tot.ejec / tot.prog * 100) : null;
       const totPctOp = tot.vivos ? Math.round(tot.op / tot.vivos * 100) : null;
-      const fila = (r, isTot) => h('tr', { class: isTot ? '' : '', style: isTot ? { fontWeight: 700, background: 'var(--surface-2)' } : null, onclick: isTot ? null : () => go('equipos', { servicio: r.sv }) },
+      const fila = (r, isTot) => h('tr', { style: isTot ? { fontWeight: 700, background: 'var(--surface-2)' } : null, onclick: isTot ? null : () => go('equipos', { servicio: r.sv }) },
         h('td', {}, isTot ? 'TOTAL' : r.sv), h('td', { class: 'num' }, r.total),
         h('td', { class: 'num' }, r.op), h('td', { class: 'num', style: r.no ? { color: 'var(--noop)' } : null }, r.no), h('td', { class: 'num', style: r.stc ? { color: 'var(--st)' } : null }, r.stc),
         h('td', {}, pctPill(isTot ? totPctOp : r.pctOp)),
@@ -774,18 +832,33 @@
         h('thead', {}, h('tr', {}, h('th', {}, 'Servicio'), h('th', { class: 'num' }, 'Equipos'), h('th', { class: 'num' }, 'Oper.'), h('th', { class: 'num' }, 'No op.'), h('th', { class: 'num' }, 'ST'), h('th', {}, '% Operativo'), h('th', {}, `MP ${MES_ESP(m)}`), h('th', {}, '% Cumplimiento MP'), h('th', { class: 'num' }, 'Atrasadas'), h('th', { class: 'num' }, 'Pend.'))),
         h('tbody', {}, ...rows.map(r => fila(r)), fila(tot, true)))));
     }
+    function renderResponsable() {
+      const rows = filasPorResponsable();
+      mount(wrap, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Responsable'), h('th', { class: 'num' }, 'Pend. abiertos'), h('th', { class: 'num' }, 'Vencidos'), h('th', { class: 'num' }, `MP ${MES_ESP(m)}`), h('th', { class: 'num' }, `MP ${y}`), h('th', { class: 'num' }, `Eventos ${y}`), h('th', { class: 'num' }, 'Equipos a cargo'))),
+        h('tbody', {}, ...rows.map(r => h('tr', { onclick: () => go('pendientes', { ejec: r.ej }) },
+          h('td', {}, r.ej), h('td', { class: 'num' }, r.pend || h('span', { class: 'faint' }, '0')),
+          h('td', { class: 'num', style: r.venc ? { color: 'var(--noop)' } : null }, r.venc || '—'),
+          h('td', { class: 'num' }, r.mpMes || '—'), h('td', { class: 'num' }, r.mpAno || '—'), h('td', { class: 'num' }, r.evAno || '—'), h('td', { class: 'num' }, r.cargo || '—')))))));
+    }
+    function render() { renderTrend(); if (modo === 'servicio') renderServicio(); else renderResponsable(); }
     function exportar() {
+      if (modo === 'responsable') {
+        const rows = filasPorResponsable().map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
+        return exportTablaExcel('Responsables', `Indicadores por responsable · ${MES_ESP(m)} ${y}`, ['Responsable', 'Pend. abiertos', 'Vencidos', `MP ${MES_ESP(m)}`, `MP ${y}`, `Eventos ${y}`, 'Equipos a cargo'], rows, `SIGEM_responsables_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
+      }
       const rows = filasPorServicio().map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
       exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `SIGEM_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
     }
+    const seg = h('div', { class: 'seg' }, ...[['servicio', 'Por servicio'], ['responsable', 'Por responsable']].map(([v, l]) =>
+      h('button', { class: modo === v ? 'on' : '', onclick: e => { modo = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
     const root = h('div', {},
-      h('div', { class: 'filterbar' },
+      h('div', { class: 'filterbar' }, seg,
         field(null, selectEl(MESES.map((mm, i) => [i, MES_ESP(i)]), m, { onchange: e => { m = +e.target.value; render(); } })),
         field(null, selectEl([YEAR + 1, YEAR, YEAR - 1].map(yy => [yy, yy]), y, { onchange: e => { y = +e.target.value; render(); } })),
-        h('span', { class: 'count-note', style: { marginLeft: '0' } }, 'Clic en un servicio para ver sus equipos'),
         h('div', { class: 'tb-spacer' }),
         h('button', { class: 'btn sm', onclick: exportar }, svg(ic.dl, 14), 'Exportar')),
-      wrap);
+      trendBox, wrap);
     render(); return root;
   };
 

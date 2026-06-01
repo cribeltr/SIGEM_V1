@@ -430,6 +430,16 @@
   function sinProgramacionMP(equipo) {
     return equipo.estado !== 'baja' && !MESES.some(m => mpProgramadaEnMes(equipo, m));
   }
+  // Agrega una nota/observación libre al equipo (con timestamp y autor). No guarda.
+  function agregarNotaEquipo(equipo, texto, autor) {
+    if (!texto || !texto.trim()) return null;
+    if (!Array.isArray(equipo.notas)) equipo.notas = [];
+    const nota = { autor: autor || 'Cristian', fecha: hoyLocal(), ts: new Date().toISOString(), texto: texto.trim() };
+    equipo.notas.push(nota);
+    audit('equipo', equipo.inv, 'nota', null, nota.texto.slice(0, 80));
+    return nota;
+  }
+  function notasDe(equipo) { return Array.isArray(equipo.notas) ? equipo.notas : []; }
 
   // ==========================================================================
   // LÓGICA DE DOMINIO — motor de estados del equipo
@@ -1648,7 +1658,7 @@
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
