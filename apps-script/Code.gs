@@ -131,8 +131,8 @@ function writeSheets(sheets) {
     var sh = sheetByName(spec.name, true);
     sh.clear();
     var rows = spec.rows || [];
+    var maxc = 1;
     if (rows.length) {
-      var maxc = 1;
       rows.forEach(function (r) { if (r.length > maxc) maxc = r.length; });
       var norm = rows.map(function (r) { var a = r.slice(); while (a.length < maxc) a.push(''); return a; });
       sh.getRange(1, 1, norm.length, maxc).setValues(norm);
@@ -140,6 +140,10 @@ function writeSheets(sheets) {
       sh.setFrozenRows(hr);
       if (hr >= 1) sh.getRange(1, 1, 1, maxc).setFontWeight('bold');
     }
+    // Recortar filas/columnas sobrantes para no dejar miles de celdas vacías.
+    var usedR = Math.max(rows.length, 1), usedC = Math.max(maxc, 1);
+    if (sh.getMaxRows() > usedR) sh.deleteRows(usedR + 1, sh.getMaxRows() - usedR);
+    if (sh.getMaxColumns() > usedC) sh.deleteColumns(usedC + 1, sh.getMaxColumns() - usedC);
     if (spec.hidden || isSystem(spec.name)) sh.hideSheet();
     else { sh.showSheet(); order.push(spec.name); }
   });

@@ -234,6 +234,16 @@ table.dense thead th:hover .funnel { opacity: .5; }
 .xf-n { color: var(--faint); font-family: var(--mono); font-size: 10.5px; flex: 0 0 auto; }
 .xf-more { padding: 6px 13px; color: var(--faint); font-size: 11px; }
 .xf-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--surface-2); }
+
+/* --- Lista de pendientes (ficha de equipo): tarjetas, sin scroll horizontal --- */
+.p-list { display: flex; flex-direction: column; }
+.p-card { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+.p-card:last-child { border-bottom: none; }
+.p-card:hover { background: var(--surface-2); }
+.p-card.done { opacity: .6; }
+.p-card-hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.p-card-desc { font-size: 12.5px; color: var(--text); margin-top: 5px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.p-card-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-top: 5px; }
 table.dense tbody td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
 table.dense tbody tr { cursor: pointer; }
 table.dense tbody tr:hover { background: var(--surface-2); }
@@ -2602,7 +2612,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formNuevoEvento({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo evento'),
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
-        h('button', { class: 'btn sm', onclick: () => formAsignarEncargado(eq) }, 'Encargado'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
     const tabsDef = [['resumen', 'Resumen'], ['matriz', 'Matriz MP'], ['bitacora', 'Bitácora'], ['ciclos', 'Ciclos'], ['pendientes', 'Pendientes', pends.length], ['conflictos', 'Conflictos', confs.length], ['auditoria', 'Auditoría']];
@@ -2728,9 +2737,41 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')))))) : h('div', { class: 'empty' }, 'Sin ciclos')));
   }
   function tabPendientes(eq) {
-    const ps = H.pendientesDe(eq.inv);
-    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), h('div', { class: 'tb-spacer' }), h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')),
-      h('div', { class: 's-bd flush' }, ps.length ? pendientesTable(ps) : h('div', { class: 'empty' }, 'Sin pendientes')));
+    const all = H.pendientesDe(eq.inv).slice().sort((a, b) => (a.estado === 'cerrado') - (b.estado === 'cerrado') || (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
+    const nAct = all.filter(p => p.estado !== 'cerrado').length, nRes = all.filter(p => p.estado === 'cerrado').length;
+    let filtro = 'activos';   // activos | resueltos | todos
+    const body = h('div', { class: 's-bd flush' });
+    const sub = h('span', { class: 's-sub' });
+    function lista() {
+      if (filtro === 'resueltos') return all.filter(p => p.estado === 'cerrado');
+      if (filtro === 'todos') return all;
+      return all.filter(p => p.estado !== 'cerrado');
+    }
+    function render() {
+      const ps = lista();
+      sub.textContent = `${nAct} activo(s) · ${nRes} resuelto(s)`;
+      mount(body, ps.length ? h('div', { class: 'p-list' }, ...ps.map(pendienteCard))
+        : h('div', { class: 'empty' }, filtro === 'resueltos' ? 'Sin pendientes resueltos' : filtro === 'activos' ? 'Sin pendientes activos' : 'Sin pendientes'));
+    }
+    const seg = h('div', { class: 'seg' }, ...[['activos', `Activos${nAct ? ' · ' + nAct : ''}`], ['resueltos', `Resueltos${nRes ? ' · ' + nRes : ''}`], ['todos', 'Todos']].map(([v, l]) =>
+      h('button', { class: filtro === v ? 'on' : '', onclick: e => { filtro = v;[...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
+    render();
+    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), sub, h('div', { class: 'tb-spacer' }), seg,
+      h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')), body);
+  }
+  function pendienteCard(p) {
+    const resuelto = p.estado === 'cerrado';
+    const venc = p.fechaComp && p.fechaComp < H.hoyLocal() && !resuelto;
+    const atraso = venc ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : null;
+    return h('div', { class: 'p-card' + (resuelto ? ' done' : ''), onclick: () => formPendiente(p) },
+      h('div', { class: 'p-card-hd' },
+        pendPill(p.estado), h('b', {}, TIPO_PENDIENTE[p.tipo] || p.tipo),
+        venc ? h('span', { class: 'tag', style: { color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' } }, '+' + atraso + ' d atraso') : null),
+      p.desc ? h('div', { class: 'p-card-desc' }, p.desc) : null,
+      h('div', { class: 'p-card-meta' },
+        h('span', { class: p.ejecutor ? '' : 'faint' }, 'Resp.: ' + (p.ejecutor || 'sin asignar')),
+        p.fechaComp ? h('span', {}, 'Compromiso ' + fmtFecha(p.fechaComp)) : null,
+        resuelto && p.fechaCierre ? h('span', {}, 'Resuelto ' + fmtFecha(p.fechaCierre)) : null));
   }
   function tabConflictos(eq) {
     const cs = H.conflictosDe(eq.inv);
@@ -3072,7 +3113,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   VIEWS.cumplimiento = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
-    let modo = 'servicio';
+    let modo = params.modo || 'mes';
     const wrap = h('div', {}); const trendBox = h('div', {});
     function filasPorResponsable() {
       const cargo = {};
@@ -3102,6 +3143,27 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         const pctMP = prog.length ? Math.round(ejec / prog.length * 100) : null;
         const pctOp = vivos.length ? Math.round(op / vivos.length * 100) : null;
         return { sv, total: es.length, vivos: vivos.length, op, no, stc, prog: prog.length, ejec, atr, pend, pctMP, pctOp };
+      });
+    }
+    // Desglose mensual de MP del año (programadas, resultado, asignación y cumplimiento).
+    function filasPorMes() {
+      const vivos = S.equipos.filter(e => e.estado !== 'baja');
+      return MESES.map((mm, i) => {
+        const asig = (S.asignacionesMP || {})[`${y}-${String(i + 1).padStart(2, '0')}`] || {};
+        let prog = 0, asignadas = 0, realiz = 0, reprog = 0, fs = 0, nu = 0, baja = 0, sinReg = 0;
+        vivos.forEach(e => {
+          if (!H.mpProgramadaEnMes(e, mm)) return;
+          prog++;
+          if (asig[e.inv]) asignadas++;
+          const r = H.resultadoMPMes(e, y, i);
+          if (r === 'Si') realiz++;
+          else if (/^C[1-8]$/.test(r || '')) reprog++;
+          else if (r === 'FS') fs++;
+          else if (r === 'NU') nu++;
+          else if (r === 'Baja') baja++;
+          else sinReg++;
+        });
+        return { mm, i, prog, asignadas, sinAsig: prog - asignadas, realiz, reprog, fs, nu, baja, sinReg, pct: prog ? Math.round(realiz / prog * 100) : null };
       });
     }
     function pctPill(v) { if (v == null) return h('span', { class: 'faint' }, '—'); return h('span', { class: 'pill ' + (v >= 90 ? 'op' : v >= 60 ? 'st' : 'noop') }, v + '%'); }
@@ -3148,8 +3210,37 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           h('td', { class: 'num', style: r.venc ? { color: 'var(--noop)' } : null }, r.venc || '—'),
           h('td', { class: 'num' }, r.mpMes || '—'), h('td', { class: 'num' }, r.mpAno || '—'), h('td', { class: 'num' }, r.evAno || '—'), h('td', { class: 'num' }, r.cargo || '—')))))));
     }
-    function render() { renderTrend(); if (modo === 'servicio') renderServicio(); else renderResponsable(); }
+    function renderMes() {
+      const rows = filasPorMes();
+      const T = rows.reduce((a, r) => ({ prog: a.prog + r.prog, asignadas: a.asignadas + r.asignadas, sinAsig: a.sinAsig + r.sinAsig, realiz: a.realiz + r.realiz, reprog: a.reprog + r.reprog, fs: a.fs + r.fs, nu: a.nu + r.nu, baja: a.baja + r.baja, sinReg: a.sinReg + r.sinReg }), { prog: 0, asignadas: 0, sinAsig: 0, realiz: 0, reprog: 0, fs: 0, nu: 0, baja: 0, sinReg: 0 });
+      const Tpct = T.prog ? Math.round(T.realiz / T.prog * 100) : null;
+      const num = (v, color) => h('td', { class: 'num', style: (color && v) ? { color } : null }, v || '—');
+      const mesCell = r => h('td', { class: 'link', title: 'Abrir la programación MP de este mes', onclick: () => go('asignaciones', { year: y, month: r.i }) }, MES_ESP(r.i));
+      const totRow = (...tds) => h('tr', { style: { fontWeight: 700, background: 'var(--surface-2)' } }, h('td', {}, 'Total año'), ...tds);
+      const t1 = h('div', { class: 'section', style: { marginBottom: '12px' } },
+        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · por mes y resultado`), h('span', { class: 's-sub' }, 'Clic en un mes para abrir su programación')),
+        h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Realizadas'), h('th', { class: 'num' }, 'Reprog.'), h('th', { class: 'num' }, 'FS'), h('th', { class: 'num' }, 'NU'), h('th', { class: 'num' }, 'Baja'), h('th', { class: 'num' }, 'Sin registro'))),
+          h('tbody', {},
+            ...rows.map(r => h('tr', {}, mesCell(r), h('td', { class: 'num' }, r.prog || '—'), num(r.realiz, 'var(--op)'), num(r.reprog, 'var(--st)'), num(r.fs, 'var(--noop)'), num(r.nu, 'var(--noop)'), num(r.baja, 'var(--noop)'), h('td', { class: 'num muted' }, r.sinReg || '—'))),
+            totRow(h('td', { class: 'num' }, T.prog), h('td', { class: 'num' }, T.realiz), h('td', { class: 'num' }, T.reprog), h('td', { class: 'num' }, T.fs), h('td', { class: 'num' }, T.nu), h('td', { class: 'num' }, T.baja), h('td', { class: 'num' }, T.sinReg)))))));
+      const t2 = h('div', { class: 'section' },
+        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · cumplimiento por mes`), h('span', { class: 's-sub' }, 'Asignación y ejecución')),
+        h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Asignadas'), h('th', { class: 'num' }, 'Sin asignar'), h('th', { class: 'num' }, 'Ejecutadas'), h('th', { class: 'num' }, 'Pendientes'), h('th', {}, 'Cumplimiento'))),
+          h('tbody', {},
+            ...rows.map(r => h('tr', {}, mesCell(r), h('td', { class: 'num' }, r.prog || '—'), num(r.asignadas), h('td', { class: 'num', style: r.sinAsig ? { color: 'var(--st)' } : null }, r.sinAsig || '—'), num(r.realiz, 'var(--op)'), h('td', { class: 'num', style: r.sinReg ? { color: 'var(--noop)' } : null }, r.sinReg || '—'),
+              h('td', { style: { minWidth: '150px' } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(r.pct), pctPill(r.pct))))),
+            totRow(h('td', { class: 'num' }, T.prog), h('td', { class: 'num' }, T.asignadas), h('td', { class: 'num' }, T.sinAsig), h('td', { class: 'num' }, T.realiz), h('td', { class: 'num' }, T.sinReg),
+              h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(Tpct), pctPill(Tpct)))))))));
+      mount(wrap, h('div', {}, t1, t2));
+    }
+    function render() { renderTrend(); if (modo === 'servicio') renderServicio(); else if (modo === 'responsable') renderResponsable(); else renderMes(); }
     function exportar() {
+      if (modo === 'mes') {
+        const rows = filasPorMes().map(r => [MES_ESP(r.i), r.prog, r.realiz, r.reprog, r.fs, r.nu, r.baja, r.sinReg, r.asignadas, r.sinAsig, r.pct == null ? '' : r.pct + '%']);
+        return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Realizadas', 'Reprog.', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `SIGEM_mp_por_mes_${y}.xlsx`);
+      }
       if (modo === 'responsable') {
         const rows = filasPorResponsable().map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
         return exportTablaExcel('Responsables', `Indicadores por responsable · ${MES_ESP(m)} ${y}`, ['Responsable', 'Pend. abiertos', 'Vencidos', `MP ${MES_ESP(m)}`, `MP ${y}`, `Eventos ${y}`, 'Equipos a cargo'], rows, `SIGEM_responsables_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
@@ -3157,7 +3248,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       const rows = filasPorServicio().map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
       exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `SIGEM_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
     }
-    const seg = h('div', { class: 'seg' }, ...[['servicio', 'Por servicio'], ['responsable', 'Por responsable']].map(([v, l]) =>
+    const seg = h('div', { class: 'seg' }, ...[['mes', 'Por mes'], ['servicio', 'Por servicio'], ['responsable', 'Por responsable']].map(([v, l]) =>
       h('button', { class: modo === v ? 'on' : '', onclick: e => { modo = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
     const root = h('div', {},
       h('div', { class: 'filterbar' }, seg,
@@ -3614,7 +3705,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     sheets.push({
       name: 'Bitácora', hidden: false, rows: [
         ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'],
-        ...S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
+        ...S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
       ]
     });
     return sheets;
@@ -3877,10 +3968,10 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       [{ wch: 24 }, { wch: 13 }, { wch: 22 }, { wch: 11 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 46 }]), 'Ciclos correctivos');
 
     // ===== 8) BITÁCORA (historial de eventos) =====
-    const bHeader = ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Origen', 'Observación'];
-    const bRows = S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', e.servicio || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', H.eventoEsAuto(e) ? 'Automático' : 'Manual', e.obs || '']);
+    const bHeader = ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'];
+    const bRows = S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', e.servicio || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']);
     add(tableSheet('Bitácora de eventos', null, bHeader, bRows,
-      [{ wch: 12 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 11 }, { wch: 44 }]), 'Bitácora');
+      [{ wch: 12 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 44 }]), 'Bitácora');
 
     dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `SIGEM_cuaderno_${hoy}.xlsx`);
     toast(`Excel exportado · ${wb.SheetNames.length} hojas`, 'success');
