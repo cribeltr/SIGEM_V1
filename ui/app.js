@@ -53,6 +53,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
+  const APP_VERSION = '2026-06-01 · b7';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1832,7 +1833,10 @@
       h('aside', { class: 'rail' },
         h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'S'), h('span', {}, 'SIGEM', h('br'), h('small', {}, 'Equipos críticos')))),
         railNav,
-        h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'), h('span', { class: 'u-name' }, 'Cristian'))),
+        h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'),
+          h('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2', minWidth: 0 } },
+            h('span', { class: 'u-name' }, 'Cristian'),
+            h('span', { class: 'faint', style: { fontSize: '10px' }, title: 'Versión de la interfaz' }, APP_VERSION)))),
       h('div', { class: 'main' },
         h('header', { class: 'topbar' },
           h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => { const a = document.querySelector('.app'); if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) a.classList.toggle('rail-open'); else a.classList.toggle('rail-collapsed'); } }, svg(ic.menu, 17)),
