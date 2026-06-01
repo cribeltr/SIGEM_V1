@@ -145,6 +145,8 @@ body {
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-2); }
+.btn.ok { background: var(--op); border-color: var(--op); color: #fff; }
+.btn.ok:hover { background: color-mix(in srgb, var(--op) 88%, #000); }
 .btn.danger { color: var(--noop); border-color: color-mix(in srgb, var(--noop) 35%, var(--border-2)); }
 .btn.danger:hover { background: var(--noop-bg); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 5px 8px; }

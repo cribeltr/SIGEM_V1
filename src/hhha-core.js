@@ -1388,6 +1388,7 @@
     p.proxRecord = cambios.proxRecord || null;
     if (p.estado === 'cerrado' && !p.fechaCierre) p.fechaCierre = hoyLocal();
     save();
+    UI.onChange();
     return { ok: true };
   }
 

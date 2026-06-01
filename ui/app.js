@@ -29,6 +29,7 @@
 
   // ----------------------------- icons (inline svg) -------------------------
   const ic = {
+    check: 'M20 6L9 17l-5-5',
     inicio: 'M3 11h18M5 11V5a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6m-6 0v3a2 2 0 0 1-4 0v-3',
     equipos: 'M4 5h16v12H4zM2 21h20M9 9h6',
     pendientes: 'M9 11l3 3 8-8M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0',
@@ -53,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b8';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b9';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1215,6 +1216,9 @@
         h('div', { class: 'field' }, h('label', {}, 'Seguimientos'), segBox, nuevoSeg)),
       footer: [
         h('button', { class: 'btn danger left', onclick: () => { if (window.confirm('¿Anular pendiente?')) { H.anularPendiente(p); closeDrawer(); } } }, 'Anular'),
+        p.estado === 'cerrado'
+          ? h('button', { class: 'btn', title: 'Volver a abrir este pendiente', onclick: () => { H.actualizarPendiente(p, { tipo: tipo.value, estado: 'en_proceso', ejecutor: ejec.value, desc: desc.value, fechaComp: fComp.value, proxRecord: fRec.value }); toast('Pendiente reabierto', 'success'); closeDrawer(); } }, 'Reabrir')
+          : h('button', { class: 'btn ok', title: 'Marcar como resuelto y guardar', onclick: () => { H.actualizarPendiente(p, { tipo: tipo.value, estado: 'cerrado', ejecutor: ejec.value, desc: desc.value, fechaComp: fComp.value, proxRecord: fRec.value }); toast('Pendiente resuelto', 'success'); closeDrawer(); } }, svg(ic.check, 15), 'Resolver'),
         h('button', { class: 'btn', onclick: closeDrawer }, 'Cerrar'),
         h('button', { class: 'btn primary', onclick: () => { H.actualizarPendiente(p, { tipo: tipo.value, estado: estado.value, ejecutor: ejec.value, desc: desc.value, fechaComp: fComp.value, proxRecord: fRec.value }); toast('Pendiente actualizado', 'success'); closeDrawer(); } }, 'Guardar')]
     });
