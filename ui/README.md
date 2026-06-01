@@ -1,0 +1,79 @@
+# SIGEM · UI nueva (densa "pro")
+
+Interfaz **rediseñada desde cero** sobre el núcleo lógico `../src/hhha-core.js`.
+No reutiliza nada del diseño del archivo original: se generó **a partir de la
+lógica** (entidades, estados, operaciones) con una estética _power-user_ de alta
+densidad (estilo Linear / consolas de datos), inicio en **cola de trabajo** y
+**100% funcional** (crea/edita/anula y persiste en `localStorage`).
+
+## Cómo abrir
+Abre `ui/index.html` en el navegador (doble click o `file://`). No requiere
+servidor ni conexión: SheetJS y LZString están **vendorizados** en `ui/vendor/`.
+
+```
+ui/
+├── index.html          Shell + orden de carga
+├── styles.css          Sistema de diseño (tokens, light/dark, densidad alta)
+├── app.js              Capa de vistas: router, tablas, drawer, command palette
+└── vendor/
+    ├── lz-string.min.js   Compresión de persistencia (engine ENV.compressor)
+    └── xlsx.full.min.js   SheetJS: conciliación + export Excel (offline)
+```
+Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx` → `app.js`.
+
+## Principios de diseño
+- **Densidad alta**: filas compactas, tipografía 12–13px, números/IDs en monoespaciada,
+  tablas con header pegajoso y orden por columna.
+- **Cola de trabajo primero**: el inicio muestra lo accionable (alertas de equipos
+  caídos/ST, pendientes vencidos, **MP del mes** pendientes, conflictos).
+- **Sin modales centrales**: las acciones abren un **drawer** lateral derecho.
+- **Estados como color**: operativo·verde, no operativo·rojo, servicio técnico·ámbar,
+  baja·gris, desconocido·slate. Consistente en pills, badges y matriz MP.
+- **Teclado**: command palette central + atajos (abajo).
+- **Tema** claro/oscuro con un toque (persistente).
+
+## Atajos de teclado
+| Tecla | Acción |
+|---|---|
+| `⌘K` / `Ctrl K` | Command palette (buscar equipos + acciones) |
+| `/` | Abrir el buscador rápido |
+| `j` / `k` | Mover selección en tablas (Equipos, Pendientes) |
+| `Enter` | Abrir la fila seleccionada |
+| `Esc` | Cerrar palette / drawer / popover |
+
+## Vistas
+- **Cola de trabajo** — alertas + MP del mes (con "MP masiva") + pendientes accionables.
+- **Equipos** — tabla densa filtrable (estado/servicio/familia/búsqueda), selección
+  múltiple → **registrar MP** en lote, columna "MP del mes".
+- **Equipo (ficha)** — cabecera con estado + datos; pestañas **Resumen · Matriz MP ·
+  Bitácora · Ciclos · Pendientes · Conflictos**. Acciones: MP rápida, nuevo evento,
+  pendiente, dar de baja. La **Matriz MP** es editable por celda (click → registra MP).
+- **Pendientes** — tabla por estado (activos/no iniciado/en proceso/resueltos), drawer
+  con tareas atómicas y seguimientos.
+- **Ciclos** — correctivos abiertos/cerrados/anulados.
+- **Eventos** — bitácora global; oficializar / editar / anular (con reversión de efectos).
+- **Asignaciones MP** — por mes: asignar responsable, descargar/subir plantilla `.xlsx`.
+- **Conciliación** — importar maestro Excel, auto-completar y resolver diferencias
+  (aceptar maestro / mantener / manual / posponer, individual y en lote).
+
+## Conexión con la lógica
+Toda operación llama a la API `HHHA.*` (no hay lógica de negocio en la UI). El motor
+se conecta al entorno mediante adaptadores inyectables:
+
+```js
+HHHA.configure({
+  ui:  { notify, confirm, prompt, onChange },  // toasts, diálogos, re-render
+  env: { xlsx: window.XLSX }                   // storage/compressor se autodetectan
+});
+HHHA.setSeed(SEED);
+HHHA.bootstrapDatos();
+```
+`UI.onChange` re-renderiza la vista actual tras cada `save()`, manteniendo la
+interfaz sincronizada con el estado.
+
+## Notas
+- Mismo `STORAGE_KEY` que el núcleo (`hhha_v1_data`): comparte datos con cualquier
+  app que use este motor.
+- Sin dependencias de build: HTML/CSS/JS plano. Verificado headless (jsdom): arranque,
+  las 8 vistas, las 6 pestañas de ficha, command palette, drawers que escriben en el
+  estado, export Excel y conciliación con SheetJS — 23/23 sin errores.
