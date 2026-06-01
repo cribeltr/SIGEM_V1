@@ -1067,7 +1067,7 @@
       try {
         const S = H.getState(); const impId = S.counters.importacion++; S.importaciones.push({ id: impId, fecha: new Date().toISOString(), archivo: f.name, resueltos: 0 });
         const parsed = await H.parsearMaestro(f); const res = H.compararMaestro(parsed, impId); H.save();
-        toast(`Maestro conciliado · ${res.conflictos} conflictos · ${res.autoCompletados} auto-completados · ${res.eventosSinteticos} MP sintéticas`, 'success');
+        toast(`Maestro conciliado · ${res.oficializados || 0} oficializadas (coinciden) · ${res.eventosSinteticos} importadas · ${res.autoCompletados} auto-completadas · ${res.conflictos} conflictos`, 'success');
         after && after();
       } catch (err) { toast('Error: ' + err.message, 'error'); }
     } });

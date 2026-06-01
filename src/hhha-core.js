@@ -754,6 +754,26 @@
   }
 
   // Compara el maestro parseado contra el state y genera conflictos / auto-completa.
+  // Oficializa los eventos MP (no anulados, en borrador) de un equipo/mes cuyo
+  // resultado COINCIDE con el del maestro. No sobrescribe nada: solo confirma
+  // como oficial lo ya registrado en la app. Devuelve cuántos oficializó.
+  function oficializarMPMesPorMaestro(inv, year, monthIdx, resultadoMaestro, importacionId) {
+    let n = 0;
+    state.eventos.forEach(ev => {
+      if (ev.inv !== inv || ev.anulado || ev.tipo !== 'Mantención preventiva' || !ev.fecha) return;
+      const d = new Date(ev.fecha + 'T00:00:00');
+      if (d.getFullYear() !== year || d.getMonth() !== monthIdx) return;
+      if ((ev.resultado || 'Si') !== resultadoMaestro) return; // solo si coincide
+      if (ev.oficial === 'Sí') return;                          // ya oficial
+      ev.oficial = 'Sí';
+      ev.ts = new Date().toISOString();
+      ev.confirmadoMaestro = importacionId || true;
+      audit('evento', ev.id, 'oficial', 'No', 'Sí (coincide con maestro)');
+      n++;
+    });
+    return n;
+  }
+
   function compararMaestro(parsed, importacionId) {
     const conflictosNuevos = [];
     const todos = new Set([...Object.keys(parsed.pmp), ...Object.keys(parsed.reg)]);
@@ -762,6 +782,7 @@
     const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
     let autoCompletados = 0;
     let eventosSinteticos = 0;
+    let oficializados = 0;
 
     // 1. Equipos nuevos: en maestro pero no en programa
     todos.forEach(inv => {
@@ -839,8 +860,16 @@
         ['P', 'R'].forEach(campo => {
           const vp = valNorm(regProg[campo] || '');
           const vm = valNorm(regMast[campo] || '');
-          if (vp === vm) return;
+          if (vp === vm) {
+            // Coincide con el maestro: si es una R con evento MP en borrador, se
+            // OFICIALIZA (se mantiene lo de la app, solo se confirma).
+            if (campo === 'R' && vm && RESULTADOS_MP.has(vm)) oficializados += oficializarMPMesPorMaestro(eq.inv, year, MES_NUM[mes], vm, importacionId);
+            return;
+          }
           if (!fromReg) return;
+          // R sin dato en el maestro: no hay con qué verificar → se conserva lo de
+          // la app sin generar conflicto (no se sobrescribe ni se marca diferencia).
+          if (campo === 'R' && !vm) return;
           // Auto-completar: vacío en programa + valor en maestro
           if (!vp && vm) {
             eq.registro = eq.registro || {};
@@ -888,7 +917,7 @@
     });
 
     state.conflictos.push(...conflictosNuevos);
-    return { conflictos: conflictosNuevos.length, autoCompletados, eventosSinteticos };
+    return { conflictos: conflictosNuevos.length, autoCompletados, eventosSinteticos, oficializados };
   }
 
   function registrarOActualizarConflicto(data, buffer) {
@@ -929,16 +958,24 @@
           if (!eq.registro[c.mes].P && !eq.registro[c.mes].R) delete eq.registro[c.mes];
         }
         c.resolucionValor = v;
-        // Aceptar un R con valor válido del catálogo MP → crear evento sintético
+        // Aceptar un R con valor válido del catálogo MP.
         if (c.hoja === 'Registro' && c.campo === 'R' && v && RESULTADOS_MP.has(v)) {
           const mIdx = MES_NUM[c.mes];
           const yearStr = (c.year || new Date().getFullYear()).toString();
-          const yaExiste = state.eventos.some(ev =>
+          const mismos = state.eventos.filter(ev =>
             ev.inv === eq.inv && !ev.anulado && ev.tipo === 'Mantención preventiva' &&
-            ev.fecha && new Date(ev.fecha + 'T00:00:00').getMonth() === mIdx &&
-            ev.fecha.startsWith(yearStr)
-          );
-          if (!yaExiste) {
+            ev.fecha && new Date(ev.fecha + 'T00:00:00').getMonth() === mIdx && ev.fecha.startsWith(yearStr));
+          const coinciden = mismos.filter(ev => (ev.resultado || 'Si') === v);
+          // Los que difieren del maestro quedan reemplazados (anulados).
+          mismos.filter(ev => (ev.resultado || 'Si') !== v).forEach(ev => {
+            ev.anulado = true; ev.motivoAnulacion = 'Reemplazado por el maestro (conciliación)'; ev.fechaAnulacion = new Date().toISOString();
+            audit('evento', ev.id, 'anulado', false, true);
+          });
+          if (coinciden.length) {
+            // Ya existe un registro con el valor del maestro → solo se oficializa (sin duplicar).
+            coinciden.forEach(ev => { if (ev.oficial !== 'Sí') { ev.oficial = 'Sí'; ev.ts = new Date().toISOString(); audit('evento', ev.id, 'oficial', 'No', 'Sí (conciliación)'); } });
+            eventoCreado = coinciden[0];
+          } else {
             const fecha = `${yearStr}-${String(mIdx + 1).padStart(2, '0')}-15`;
             const ev = {
               id: state.counters.evento++,
@@ -965,6 +1002,10 @@
       }
       if (accion === 'mantener_programa') {
         c.resolucionValor = c.valorPrograma;
+        // Se conserva lo de la app; si es una R con evento MP en borrador, se oficializa.
+        if (c.hoja === 'Registro' && c.campo === 'R' && c.valorPrograma && RESULTADOS_MP.has(c.valorPrograma)) {
+          oficializarMPMesPorMaestro(eq.inv, (c.year || new Date().getFullYear()), MES_NUM[c.mes], c.valorPrograma, c.importacionId);
+        }
       }
       c.estado = accion === 'posponer' ? 'pospuesto' :
         accion === 'aceptar_maestro' ? 'resuelto_maestro' :
