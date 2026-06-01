@@ -206,6 +206,34 @@ table.dense thead th { position: sticky; top: 0; z-index: 1; background: var(--s
 table.dense thead th.sortable { cursor: pointer; }
 table.dense thead th.sortable:hover { color: var(--text); }
 table.dense thead th .arr { color: var(--accent); margin-left: 3px; }
+
+/* --- Filtros de columna estilo Excel (AutoFilter) --- */
+table.dense thead th .th-lbl { vertical-align: middle; }
+.funnel { display: inline-flex; align-items: center; justify-content: center; margin-left: 5px; padding: 1px;
+  border: none; background: transparent; color: var(--muted); border-radius: var(--radius-xs); cursor: pointer;
+  opacity: 0; transition: opacity .12s, background .12s, color .12s; vertical-align: middle; line-height: 0; }
+.funnel .ico { width: 12px; height: 12px; }
+table.dense thead th:hover .funnel { opacity: .5; }
+.funnel:hover { opacity: 1 !important; background: var(--surface-3); color: var(--text); }
+.funnel.on { opacity: 1; color: var(--accent); background: var(--accent-bg); }
+.xfilter { background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); width: 250px; max-width: 92vw; z-index: 62; display: flex; flex-direction: column;
+  overflow: hidden; font-size: 12.5px; animation: toast-in .13s ease; }
+.xf-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 11px 5px; }
+.xf-ttl { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+.xf-cnt { font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+.xf-search { display: flex; align-items: center; gap: 6px; padding: 0 11px 8px; color: var(--muted); }
+.xf-search input { width: 100%; }
+.xf-all { display: flex; align-items: center; gap: 8px; padding: 7px 13px; border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); font-weight: 600; cursor: pointer; background: var(--surface-2); }
+.xf-all input, .xf-row input { width: auto; flex: 0 0 auto; }
+.xf-list { max-height: 244px; overflow-y: auto; padding: 4px 0; }
+.xf-row { display: flex; align-items: center; gap: 8px; padding: 4px 13px; cursor: pointer; }
+.xf-row:hover { background: var(--surface-2); }
+.xf-v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xf-n { color: var(--faint); font-family: var(--mono); font-size: 10.5px; flex: 0 0 auto; }
+.xf-more { padding: 6px 13px; color: var(--faint); font-size: 11px; }
+.xf-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--surface-2); }
 table.dense tbody td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
 table.dense tbody tr { cursor: pointer; }
 table.dense tbody tr:hover { background: var(--surface-2); }
@@ -2241,7 +2269,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     plus: 'M12 5v14M5 12h14', sun: 'M12 3v2M12 19v2M5 5l1.4 1.4M17.6 17.6L19 19M3 12h2M19 12h2M5 19l1.4-1.4M17.6 6.4L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', menu: 'M3 6h18M3 12h18M3 18h18',
     dl: 'M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16', up: 'M12 21V9m0 0l4 4m-4-4l-4 4M4 3h16',
-    x: 'M6 6l12 12M18 6L6 18', chev: 'M9 6l6 6-6 6', dots: 'M12 5h.01M12 12h.01M12 19h.01'
+    x: 'M6 6l12 12M18 6L6 18', chev: 'M9 6l6 6-6 6', dots: 'M12 5h.01M12 12h.01M12 19h.01',
+    funnel: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z'
   };
   function svg(d, w) { return h('span', { class: 'ico', html: `<svg width="${w || 17}" height="${w || 17}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d.split('M').filter(Boolean).map(p => `<path d="M${p}"/>`).join('')}</svg>` }); }
 
@@ -2445,6 +2474,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const S = H.getState();
     let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
+    const cf = colFilters(render);
+    const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
     const eqSel = new Set();
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
     const familias = [...new Set(S.equipos.map(e => e.fam).filter(Boolean))].sort();
@@ -2472,6 +2503,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (params.alerta30) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
       if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
+      list = cf.apply(list);
       list.sort((a, b) => {
         let va, vb;
         if (sortKey === 'mp') { va = H.mpEstadoMes(a, YEAR, MONTH); vb = H.mpEstadoMes(b, YEAR, MONTH); }
@@ -2484,13 +2516,17 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     function render() {
       const list = data();
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
-      const th = (key, lbl, cls) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
-        lbl, sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null);
+      const th = (key, lbl, cls, getter) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
+        h('span', { class: 'th-lbl' }, lbl), sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null, getter ? cf.btn(key, lbl, getter) : null);
       const allChk = h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(x => eqSel.add(x.inv)); else eqSel.clear(); render(); } });
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
-          h('th', { class: 'shrink' }, allChk), th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
-          th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'), th('pend', 'Pend.', 'num'))),
+          h('th', { class: 'shrink' }, allChk),
+          th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('servicio', 'Servicio', '', e => e.servicio),
+          th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado), th('fam', 'Familia', '', e => e.fam), th('freq', 'Freq', '', e => e.freq),
+          th('mp', `MP ${MES_ESP(MONTH)}`, '', mpMesLabel),
+          h('th', {}, h('span', { class: 'th-lbl' }, 'Encargado'), cf.btn('encargado', 'Encargado', e => H.encargadoDe(e) || 'sin asignar')),
+          th('pend', 'Pend.', 'num', e => String(H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length)))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
           const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
@@ -2747,6 +2783,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const S = H.getState();
     let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: params.tipo || '', q: '', serv: '', ejec: params.ejec || '', record: !!params.record };
     pendSel = new Set();
+    const cf = colFilters(render);
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const cargaBox = h('div', {}); const bulkBar = h('div', { class: 'filterbar', style: { display: 'none', background: 'var(--accent-bg)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' } });
@@ -2767,6 +2804,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       else if (f.ejec) list = list.filter(p => p.ejecutor === f.ejec);
       if (f.record) list = list.filter(p => p.proxRecord && p.proxRecord <= H.hoyLocal() && p.estado !== 'cerrado');
       if (f.q) { const q = norm(f.q); list = list.filter(p => norm(`${p.inv} ${p.equipo} ${p.desc} ${p.ejecutor}`).includes(q)); }
+      list = cf.apply(list);
       // Orden: más atrasados primero (compromiso ascendente; sin fecha al final).
       return list.sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
     }
@@ -2795,7 +2833,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       renderCarga();
       const list = data();
       note.textContent = `${list.length} pendiente${list.length !== 1 ? 's' : ''}`;
-      mount(wrap, list.length ? pendientesTable(list, { sel: pendSel, onToggle: updBulk, onAll: render }) : h('div', { class: 'empty' }, 'Sin resultados'));
+      mount(wrap, (list.length || cf.anyActive()) ? pendientesTable(list, { sel: pendSel, onToggle: updBulk, onAll: render, colf: cf }) : h('div', { class: 'empty' }, 'Sin resultados'));
       kbList = { rows: list.map(p => p.id), open: id => formPendiente(S.pendientes.find(p => p.id === id)), idx: -1 };
       updBulk();
     }
@@ -2824,10 +2862,17 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     exportTablaExcel('Pendientes', 'Pendientes (vista filtrada) · ' + H.hoyLocal(), header, rows, `SIGEM_pendientes_${H.hoyLocal()}.xlsx`);
   }
   function pendientesTable(list, opts) {
-    opts = opts || {}; const sel = opts.sel;
+    opts = opts || {}; const sel = opts.sel; const colf = opts.colf;
+    const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
     const headChk = sel ? h('th', { class: 'shrink' }, h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(p => sel.add(p.id)); else list.forEach(p => sel.delete(p.id)); opts.onAll && opts.onAll(); } })) : null;
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-      h('thead', {}, h('tr', {}, headChk, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Tipo'), h('th', {}, 'Descripción'), h('th', {}, 'Estado'), h('th', {}, 'Responsable'), h('th', {}, 'Compromiso'), h('th', { class: 'num' }, 'Atraso'), h('th', {}, 'Recordatorio'))),
+      h('thead', {}, h('tr', {}, headChk,
+        TH('inv', 'N° Inv.', p => p.inv), TH('equipo', 'Equipo', p => p.equipo || '—'),
+        TH('tipo', 'Tipo', p => TIPO_PENDIENTE[p.tipo] || p.tipo), TH('desc', 'Descripción', p => p.desc || '—'),
+        TH('estadoP', 'Estado', p => ESTADO_PEND_LABEL[p.estado] || p.estado), TH('resp', 'Responsable', p => p.ejecutor || 'sin asignar'),
+        TH('comp', 'Compromiso', p => p.fechaComp ? fmtFecha(p.fechaComp) : '—'),
+        TH('atraso', 'Atraso', p => { const a = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : null; return a != null ? (a > 0 ? '+' + a + ' d' : a + ' d') : '—'; }, 'num'),
+        TH('record', 'Recordatorio', p => p.proxRecord ? fmtFecha(p.proxRecord) : '—'))),
       h('tbody', {}, ...list.map(p => {
         const venc = p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado';
         const atraso = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : null;
@@ -2850,11 +2895,17 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const S = H.getState();
     let estado = params.estado || 'abierto';
     const wrap = h('div', { class: 'tbl-wrap' });
+    const cf = colFilters(render);
+    const eqName = c => (H.findEquipo(c.inv) || {}).equipo || '—';
     function render() {
       let list = S.ciclos.slice().reverse();
       if (estado !== 'todos') list = list.filter(c => c.estado === estado);
-      mount(wrap, list.length ? h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Folio'), h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
+      list = cf.apply(list);
+      mount(wrap, S.ciclos.length ? h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {},
+          cf.thF('folio', 'Folio', c => c.folio || '—'), cf.thF('inv', 'N° Inv.', c => c.inv), cf.thF('equipo', 'Equipo', eqName),
+          cf.thF('apertura', 'Apertura', c => fmtFecha(c.fechaApertura)), cf.thF('cierre', 'Cierre', c => c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
+          cf.thF('estadoC', 'Estado', c => c.estado), cf.thF('ing', 'Ingeniero', c => c.ingenieroAsignado || '—'))),
         h('tbody', {}, ...list.map(c => { const eq = H.findEquipo(c.inv) || {}; return h('tr', { onclick: () => go('equipo', { inv: c.inv, tab: 'ciclos' }) },
           h('td', { class: 'mono' }, c.folio || '—'), h('td', { class: 'mono' }, c.inv), h('td', {}, eq.equipo || '—'), h('td', {}, fmtFecha(c.fechaApertura)),
           h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'), h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')); }))
@@ -2873,6 +2924,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
     const dupSet = H.idsMPDuplicadas();
     const nAuto = S.eventos.filter(e => !e.anulado && H.eventoEsAuto(e)).length;
+    const cf = colFilters(render);
     function data() {
       let list = S.eventos.slice();
       if (!f.anulados) list = list.filter(e => !e.anulado);
@@ -2884,9 +2936,10 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (f.desde) list = list.filter(e => e.fecha && e.fecha >= f.desde);
       if (f.hasta) list = list.filter(e => e.fecha && e.fecha <= f.hasta);
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.ejecutor} ${e.folio} ${e.obs}`).includes(q)); }
+      list = cf.apply(list);
       return list.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 600);
     }
-    function render() { const list = data(); note.textContent = `${list.length}`; mount(wrap, eventosTable(list, false)); }
+    function render() { const list = data(); note.textContent = `${list.length}`; mount(wrap, eventosTable(list, false, cf)); }
     const root = h('div', {},
       h('div', { class: 'filterbar' },
         h('input', { type: 'search', placeholder: 'Buscar inv, ejecutor, folio…', oninput: e => { f.q = e.target.value; render(); } }),
@@ -2904,10 +2957,16 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       wrap);
     render(); return root;
   };
-  function eventosTable(list, compact) {
+  function eventosTable(list, compact, colf) {
     const dup = H.idsMPDuplicadas();
+    const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Fecha'), !compact ? h('th', {}, 'N° Inv.') : null, h('th', {}, 'Tipo'), h('th', {}, 'Resultado'), h('th', {}, 'Estado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Folio'), h('th', {}, 'Observación'), h('th', {}, ''), h('th', { class: 'shrink' }, ''))),
+      h('thead', {}, h('tr', {},
+        TH('fecha', 'Fecha', e => fmtFecha(e.fecha)), !compact ? TH('inv', 'N° Inv.', e => e.inv) : null,
+        TH('tipo', 'Tipo', e => H.etiquetaTipoEvento(e)), TH('res', 'Resultado', e => e.resultado || '—'),
+        TH('estadoE', 'Estado', e => e.estado || '—'), TH('ejec', 'Ejecutor', e => e.ejecutor || '—'),
+        TH('folio', 'Folio', e => e.folio || '—'), TH('obs', 'Observación', e => e.obs || '—'),
+        TH('oficial', 'Oficial', e => e.oficial === 'Sí' ? 'Oficial' : 'Borrador'), h('th', { class: 'shrink' }, ''))),
       h('tbody', {}, ...list.map(e => h('tr', { class: e.anulado ? '' : '', style: e.anulado ? { opacity: .5 } : null },
         h('td', {}, fmtFecha(e.fecha)),
         !compact ? h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv) : null,
@@ -2941,6 +3000,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     mpSel = new Set();
     const keyMes = () => `${y}-${String(m + 1).padStart(2, '0')}`;
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
+    const cf = colFilters(render);
+    const estLblMP = s => ({ ejecutada: 'Ejecutada', reprogramada: 'Reprogramada', otro: 'Otro', pendiente: 'Pendiente' }[s] || s);
+    const progDe = e => (e.registro && e.registro[MESES[m]] && e.registro[MESES[m]].P) || (e.prog || {})[MESES[m]] || '—';
     const bulkAsig = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formAsignarEjecutor([...mpSel], keyMes()) }, 'Asignar ejecutor');
     function updBulk() { const on = mpSel.size; bulkAsig.style.display = on ? '' : 'none'; if (on) { bulkAsig.textContent = `Asignar ejecutor (${on})`; } }
     function data() {
@@ -2949,14 +3011,19 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (estadoMP === 'ejec') list = list.filter(e => H.mpDelMesEjecutada(e, y, m));
       if (estadoMP === 'pend') list = list.filter(e => H.mpEstadoMes(e, y, m) === 'pendiente');
       if (sinAsig) list = list.filter(e => !asig[e.inv]);
+      list = cf.apply(list);
       return { list, asig };
     }
     function render() {
       const { list, asig } = data(); const km = keyMes();
       note.textContent = `${list.length} programados · ${list.filter(e => asig[e.inv]).length} con responsable`;
       const allChk = h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(x => mpSel.add(x.inv)); else mpSel.clear(); render(); } });
-      mount(wrap, list.length ? h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', { class: 'shrink' }, allChk), h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Freq'), h('th', {}, 'Prog.'), h('th', {}, 'Resultado'), h('th', {}, 'Estado MP'), h('th', {}, 'Responsable'), h('th', { class: 'shrink' }, ''))),
+      mount(wrap, (list.length || cf.anyActive()) ? h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', { class: 'shrink' }, allChk),
+          cf.thF('inv', 'N° Inv.', e => e.inv), cf.thF('equipo', 'Equipo', e => e.equipo || '—'), cf.thF('servicio', 'Servicio', e => e.servicio || '—'),
+          cf.thF('freq', 'Freq', e => e.freq || '—'), cf.thF('prog', 'Prog.', progDe),
+          cf.thF('resultado', 'Resultado', e => H.resultadoMPMes(e, y, m) || '—'), cf.thF('estadoMP', 'Estado MP', e => estLblMP(H.mpEstadoMes(e, y, m))),
+          cf.thF('resp', 'Responsable', e => { const a = (S.asignacionesMP || {})[keyMes()] || {}; return a[e.inv] || 'sin asignar'; }), h('th', { class: 'shrink' }, ''))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: mpSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? mpSel.add(e.inv) : mpSel.delete(e.inv); updBulk(); tr.classList.toggle('sel', ev.target.checked); } });
           const r = H.resultadoMPMes(e, y, m);
@@ -3288,7 +3355,96 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     document.body.appendChild(pop);
     setTimeout(() => document.addEventListener('click', closePop), 0);
   }
-  function closePop() { pop && pop.remove(); pop = null; document.removeEventListener('click', closePop); }
+  function closePop() { pop && pop.remove(); pop = null; document.removeEventListener('click', closePop); document.removeEventListener('mousedown', closePop); }
+
+  // ===== Filtros de columna estilo Excel (AutoFilter, multi-selección) =====
+  // Uso:  const cf = colFilters(render);
+  //       header:  cf.thF('servicio', 'Servicio', e => e.servicio)   // <th> con embudo
+  //       o bien:  cf.btn('inv', 'N° Inv.', e => e.inv)              // sólo el botón (th propio)
+  //       data():  list = cf.apply(list);   // registra el universo y filtra por columnas
+  function colFilters(onApply) {
+    const sets = {};        // key -> Set<string> seleccionados (ausente = sin filtro)
+    const getters = {};     // key -> (row)=>valor
+    let universe = [];      // filas previas a los filtros de columna (para poblar valores)
+    const keyOf = v => (v == null || v === '') ? '—' : String(v);
+    function pass(row, exceptKey) {
+      for (const k in sets) {
+        if (k === exceptKey) continue;
+        const s = sets[k]; if (!s || !s.size) continue;
+        const g = getters[k]; if (!g) continue;
+        if (!s.has(keyOf(g(row)))) return false;
+      }
+      return true;
+    }
+    function apply(rows) { universe = rows.slice(); return rows.filter(r => pass(r)); }
+    function anyActive() { return Object.keys(sets).some(k => sets[k] && sets[k].size); }
+    function resetAll() { for (const k in sets) delete sets[k]; }
+    function btn(key, label, getter) {
+      getters[key] = getter;
+      const on = sets[key] && sets[key].size;
+      return h('button', { class: 'funnel' + (on ? ' on' : ''), title: on ? 'Filtrado · clic para cambiar' : 'Filtrar', onclick: ev => { ev.stopPropagation(); openPanel(key, label, getter, ev.currentTarget); } }, svg(ic.funnel, 12));
+    }
+    function thF(key, label, getter, opts) {
+      opts = opts || {};
+      return h('th', { class: opts.cls || '' }, h('span', { class: 'th-lbl' }, label), btn(key, label, getter));
+    }
+    function openPanel(key, label, getter, anchor) {
+      closePop();
+      const avail = universe.filter(r => pass(r, key));           // valores disponibles (cross-filter)
+      const counts = new Map();
+      avail.forEach(r => { const v = keyOf(getter(r)); counts.set(v, (counts.get(v) || 0) + 1); });
+      const allKeys = [...counts.keys()].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+      const work = new Set(sets[key] ? [...sets[key]] : allKeys);  // sin filtro previo = todo marcado
+      let q = '';
+      const MAXSHOW = 400;
+      const listEl = h('div', { class: 'xf-list' });
+      const selAll = h('input', { type: 'checkbox' });
+      const visKeys = () => { const nq = norm(q); return nq ? allKeys.filter(k => norm(k).includes(nq)) : allKeys; };
+      function renderList() {
+        clear(listEl);
+        const vis = visKeys();
+        selAll.checked = vis.length > 0 && vis.every(k => work.has(k));
+        selAll.indeterminate = !selAll.checked && vis.some(k => work.has(k));
+        vis.slice(0, MAXSHOW).forEach(k => {
+          const cb = h('input', { type: 'checkbox', checked: work.has(k) ? true : false, onchange: () => { cb.checked ? work.add(k) : work.delete(k); renderList(); } });
+          listEl.appendChild(h('label', { class: 'xf-row' }, cb, h('span', { class: 'xf-v', title: k }, k), h('span', { class: 'xf-n' }, counts.get(k))));
+        });
+        if (vis.length > MAXSHOW) listEl.appendChild(h('div', { class: 'xf-more' }, `+${vis.length - MAXSHOW} más · usa la búsqueda`));
+        if (!vis.length) listEl.appendChild(h('div', { class: 'xf-more' }, 'Sin coincidencias'));
+      }
+      const search = h('input', { type: 'search', placeholder: 'Buscar valor…', oninput: e => { q = e.target.value; renderList(); } });
+      selAll.onchange = () => { const vis = visKeys(); if (selAll.checked) vis.forEach(k => work.add(k)); else vis.forEach(k => work.delete(k)); renderList(); };
+      function aceptar() {
+        if (allKeys.length && allKeys.every(k => work.has(k))) delete sets[key];   // todo = sin filtro
+        else if (!work.size) sets[key] = new Set([' __none__']);              // nada = ninguna fila
+        else sets[key] = new Set(work);
+        closePop(); onApply && onApply();
+      }
+      const panel = h('div', { class: 'xfilter' },
+        h('div', { class: 'xf-hd' }, h('span', { class: 'xf-ttl' }, label), allKeys.length ? h('span', { class: 'xf-cnt' }, allKeys.length + ' valores') : null),
+        h('div', { class: 'xf-search' }, svg(ic.search, 13), search),
+        h('label', { class: 'xf-all' }, selAll, h('span', {}, '(Seleccionar todo)')),
+        listEl,
+        h('div', { class: 'xf-foot' },
+          h('button', { class: 'btn sm ghost', onclick: () => { delete sets[key]; closePop(); onApply && onApply(); } }, 'Limpiar'),
+          h('div', { class: 'tb-spacer' }),
+          h('button', { class: 'btn sm', onclick: () => closePop() }, 'Cancelar'),
+          h('button', { class: 'btn sm primary', onclick: aceptar }, 'Aceptar')));
+      placePanel(panel, anchor);
+      renderList(); setTimeout(() => search.focus(), 20);
+    }
+    return { btn, thF, apply, anyActive, resetAll, sets };
+  }
+  // Posiciona un panel flotante bajo el ancla; cierra al hacer clic fuera (no dentro).
+  function placePanel(panel, anchor) {
+    const r = anchor.getBoundingClientRect();
+    panel.style.position = 'fixed';
+    panel.style.top = (r.bottom + 4) + 'px';
+    panel.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    pop = panel; document.body.appendChild(panel);
+    panel.addEventListener('mousedown', e => e.stopPropagation());
+    setTimeout(() => document.addEventListener('mousedown', closePop), 0);
+  }
 
   // ============================ command palette =============================
   const cmdkScrim = h('div', { class: 'cmdk-scrim', onclick: () => closeCmdk() }); document.body.appendChild(cmdkScrim);

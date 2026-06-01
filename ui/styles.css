@@ -192,6 +192,34 @@ table.dense thead th { position: sticky; top: 0; z-index: 1; background: var(--s
 table.dense thead th.sortable { cursor: pointer; }
 table.dense thead th.sortable:hover { color: var(--text); }
 table.dense thead th .arr { color: var(--accent); margin-left: 3px; }
+
+/* --- Filtros de columna estilo Excel (AutoFilter) --- */
+table.dense thead th .th-lbl { vertical-align: middle; }
+.funnel { display: inline-flex; align-items: center; justify-content: center; margin-left: 5px; padding: 1px;
+  border: none; background: transparent; color: var(--muted); border-radius: var(--radius-xs); cursor: pointer;
+  opacity: 0; transition: opacity .12s, background .12s, color .12s; vertical-align: middle; line-height: 0; }
+.funnel .ico { width: 12px; height: 12px; }
+table.dense thead th:hover .funnel { opacity: .5; }
+.funnel:hover { opacity: 1 !important; background: var(--surface-3); color: var(--text); }
+.funnel.on { opacity: 1; color: var(--accent); background: var(--accent-bg); }
+.xfilter { background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); width: 250px; max-width: 92vw; z-index: 62; display: flex; flex-direction: column;
+  overflow: hidden; font-size: 12.5px; animation: toast-in .13s ease; }
+.xf-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 11px 5px; }
+.xf-ttl { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+.xf-cnt { font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+.xf-search { display: flex; align-items: center; gap: 6px; padding: 0 11px 8px; color: var(--muted); }
+.xf-search input { width: 100%; }
+.xf-all { display: flex; align-items: center; gap: 8px; padding: 7px 13px; border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); font-weight: 600; cursor: pointer; background: var(--surface-2); }
+.xf-all input, .xf-row input { width: auto; flex: 0 0 auto; }
+.xf-list { max-height: 244px; overflow-y: auto; padding: 4px 0; }
+.xf-row { display: flex; align-items: center; gap: 8px; padding: 4px 13px; cursor: pointer; }
+.xf-row:hover { background: var(--surface-2); }
+.xf-v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xf-n { color: var(--faint); font-family: var(--mono); font-size: 10.5px; flex: 0 0 auto; }
+.xf-more { padding: 6px 13px; color: var(--faint); font-size: 11px; }
+.xf-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--surface-2); }
 table.dense tbody td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
 table.dense tbody tr { cursor: pointer; }
 table.dense tbody tr:hover { background: var(--surface-2); }
