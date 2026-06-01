@@ -38,6 +38,8 @@
     conciliacion: 'M18 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 24a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 18V9a3 3 0 0 1 3-3h6',
     cumplimiento: 'M3 3v18h18M7 16l4-5 3 3 5-7',
     audit: 'M3 5h13M3 10h13M3 15h7M19 13l2 2-4 4-2-1 1-3z',
+    config: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+    cloud: 'M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 1 0 6 18.5h11.5z',
     search: 'M21 21l-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z',
     plus: 'M12 5v14M5 12h14', sun: 'M12 3v2M12 19v2M5 5l1.4 1.4M17.6 17.6L19 19M3 12h2M19 12h2M5 19l1.4-1.4M17.6 6.4L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', menu: 'M3 6h18M3 12h18M3 18h18',
@@ -110,7 +112,7 @@
       notify: (m, t, a) => toast(m, t, a),
       confirm: (m) => window.confirm(m),
       prompt: (m) => window.prompt(m),
-      onChange: () => { scheduleRefresh(); }
+      onChange: () => { scheduleRefresh(); scheduleCloudPush(); }
     },
     env: { xlsx: window.XLSX || null }
   });
@@ -126,7 +128,8 @@
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
     { id: 'asignaciones', label: 'Asignaciones MP', icon: 'asignaciones' },
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
-    { id: 'conciliacion', label: 'Conciliación', icon: 'conciliacion' }
+    { id: 'conciliacion', label: 'Conciliación', icon: 'conciliacion' },
+    { id: 'configuracion', label: 'Configuración', icon: 'config' }
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
@@ -1131,6 +1134,158 @@
     dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), filename);
     toast(`Exportadas ${rows.length} fila(s)`, 'success');
   }
+
+  // ============================ GOOGLE SHEETS (Cloud) =======================
+  let cloudApplying = false, cloudTimer = null, cloudSyncing = false;
+  const Cloud = {
+    get url() { return localStorage.getItem('sigem_gs_url') || ''; },
+    get token() { return localStorage.getItem('sigem_gs_token') || ''; },
+    get auto() { return localStorage.getItem('sigem_gs_auto') === '1'; },
+    get lastSync() { return localStorage.getItem('sigem_gs_last') || ''; },
+    set(url, token, auto) {
+      localStorage.setItem('sigem_gs_url', (url || '').trim());
+      localStorage.setItem('sigem_gs_token', (token || '').trim());
+      localStorage.setItem('sigem_gs_auto', auto ? '1' : '0');
+    },
+    _markSync() { localStorage.setItem('sigem_gs_last', new Date().toISOString()); },
+    async pull() {
+      if (!this.url) throw new Error('Sin URL configurada');
+      if (!window.LZString) throw new Error('LZString no disponible');
+      const u = this.url + (this.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(this.token);
+      const res = await fetch(u, { redirect: 'follow' });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || 'respuesta inválida');
+      if (!j.dataB64) return { empty: true };
+      const obj = JSON.parse(LZString.decompressFromBase64(j.dataB64));
+      cloudApplying = true;
+      try { const r = H.importarBackup(obj); if (!r.ok) throw new Error(r.error); } finally { cloudApplying = false; }
+      this._markSync();
+      return { ok: true, eventos: (obj.eventos || []).length, equipos: (obj.equipos || []).length };
+    },
+    async pushData() {
+      if (!this.url || !window.LZString) return;
+      const dataB64 = LZString.compressToBase64(H.exportarBackupJSON());
+      const res = await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, dataB64 }), redirect: 'follow' });
+      const j = await res.json().catch(() => ({ ok: true }));
+      if (j && j.ok === false) throw new Error(j.error || 'error al guardar');
+      this._markSync();
+    },
+    async pushSheets() {
+      if (!this.url) throw new Error('Sin URL configurada');
+      const sheets = cuadernoSheets();
+      const res = await fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: this.token, sheets }), redirect: 'follow' });
+      const j = await res.json().catch(() => ({ ok: true }));
+      if (j && j.ok === false) throw new Error(j.error || 'error al escribir hojas');
+      this._markSync();
+      return { ok: true, hojas: sheets.length };
+    },
+    async test() {
+      const u = this.url + (this.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(this.token);
+      const res = await fetch(u, { redirect: 'follow' });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || 'sin ok');
+      return j;
+    }
+  };
+  function scheduleCloudPush() {
+    if (!Cloud.auto || !Cloud.url || cloudApplying) return;
+    clearTimeout(cloudTimer);
+    cloudTimer = setTimeout(() => { Cloud.pushData().then(() => refreshChrome()).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 4000);
+  }
+
+  // Hojas de trabajo legibles que se escriben en el Google Sheet (para usar el
+  // archivo sin la app). Devuelve [{name, rows(AOA), hidden, headerRow}].
+  function cuadernoSheets() {
+    const S = H.getState(); const hoy = H.hoyLocal();
+    const estLbl = e => ESTADO_LABEL[e] || e;
+    const fF = v => fmtFecha(v) === '—' ? '' : fmtFecha(v);
+    const sheets = [];
+    // Inicio (leyenda + instrucciones)
+    sheets.push({
+      name: 'Inicio', hidden: false, headerRow: 0, rows: [
+        ['SIGEM · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
+        ['Las hojas de trabajo (Inventario, Plan anual MP, Pendientes, Bitácora, Hoja de ruta) reflejan los datos al momento de sincronizar.'],
+        ['Los datos del sistema están en hojas ocultas (que empiezan con "_"). No las borres ni las edites.'], [],
+        ['LEYENDA · RESULTADO MP'], ['Si', 'MP realizada'],
+        ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc]), ['FS', 'Fuera de servicio'], ['NU', 'No ubicado'], ['Baja', 'Dado de baja'], ['No', 'No realizada'],
+        [], ['LEYENDA · ESTADOS'], ...['operativo', 'no_operativo', 'en_servicio_tecnico', 'baja', 'desconocido'].map(e => [estLbl(e), e])
+      ]
+    });
+    // Inventario
+    sheets.push({
+      name: 'Inventario', hidden: false, rows: [
+        ['N° Inv.', 'Carpeta', 'Serie', 'Familia', 'Equipo', 'Marca', 'Modelo', 'Servicio', 'Unidad', 'Ubicación', 'Año', 'Freq MP', 'Estado', 'Días', 'Encargado', 'Pend. abiertos'],
+        ...S.equipos.map(e => [e.inv, e.carpeta || '', e.serie || '', e.fam || '', e.equipo || '', e.marca || '', e.modelo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.ano || '', e.freq || '', estLbl(e.estado), H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length])
+      ]
+    });
+    // Plan anual MP (P/R por mes) del año vigente
+    const planHd = ['N° Inv.', 'Equipo', 'Servicio', 'Freq', 'Encargado']; MESES.forEach(m => planHd.push(m + ' P', m + ' R'));
+    sheets.push({
+      name: 'Plan anual MP ' + YEAR, hidden: false, rows: [planHd,
+        ...S.equipos.map(e => { const row = [e.inv, e.equipo || '', e.servicio || '', e.freq || '', H.encargadoDe(e) || '']; MESES.forEach(m => { const reg = (e.registro || {})[m] || {}; row.push(reg.P || (e.prog || {})[m] || '', reg.R || ''); }); return row; })]
+    });
+    // Hoja de ruta MP del mes actual
+    const keyMes = `${YEAR}-${String(MONTH + 1).padStart(2, '0')}`; const asig = (S.asignacionesMP || {})[keyMes] || {};
+    sheets.push({
+      name: 'Hoja de ruta ' + MES_ESP(MONTH), hidden: false, rows: [
+        ['N° Inv.', 'Equipo', 'Servicio', 'Ubicación', 'Freq', 'Responsable', 'Prog.', 'Realizada (✎)', 'Fecha (✎)', 'Estado (✎)', 'Firma (✎)', 'Obs (✎)'],
+        ...S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH])).map(e => [e.inv, e.equipo || '', e.servicio || '', e.ubic || '', e.freq || '', asig[e.inv] || '', (e.prog || {})[MESES[MONTH]] || '', '', '', '', '', ''])
+      ]
+    });
+    // Pendientes
+    sheets.push({
+      name: 'Pendientes', hidden: false, rows: [
+        ['ID', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Creado', 'Compromiso'],
+        ...S.pendientes.filter(p => !p.anulado).map(p => [p.id, p.inv, p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fF(p.fechaCrea), fF(p.fechaComp)])
+      ]
+    });
+    // Bitácora
+    sheets.push({
+      name: 'Bitácora', hidden: false, rows: [
+        ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'],
+        ...S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
+      ]
+    });
+    return sheets;
+  }
+
+  // ---- CONFIGURACIÓN ------------------------------------------------------
+  VIEWS.configuracion = function () {
+    const root = h('div', { class: 'view-narrow' });
+    const urlIn = h('input', { type: 'text', value: Cloud.url, placeholder: 'https://script.google.com/macros/s/.../exec' });
+    const tokIn = h('input', { type: 'text', value: Cloud.token, placeholder: '(opcional) token compartido' });
+    const autoIn = h('input', { type: 'checkbox', checked: Cloud.auto ? true : false });
+    const status = h('div', { style: { fontSize: '12px' } });
+    const setStatus = (msg, cls) => mount(status, h('span', { style: cls === 'err' ? { color: 'var(--noop)' } : cls === 'ok' ? { color: 'var(--op)' } : { color: 'var(--muted)' } }, msg));
+    const syncStatus = () => setStatus(Cloud.url ? ('Configurado · última sincronización: ' + (Cloud.lastSync ? new Date(Cloud.lastSync).toLocaleString('es-CL') : 'nunca')) : 'Sin configurar — los datos se guardan solo en este navegador.');
+    syncStatus();
+    const guardar = () => { Cloud.set(urlIn.value, tokIn.value, autoIn.checked); toast('Configuración guardada', 'success'); syncStatus(); refreshChrome(); };
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.cloud, 16), h('h3', {}, 'Almacenamiento en Google Sheets')),
+      h('div', { class: 's-bd' },
+        h('div', { class: 'notice info' }, 'Conecta SIGEM con un Google Sheet mediante un Apps Script (Web App). El estado del sistema se guarda comprimido en una hoja OCULTA y se generan hojas de trabajo legibles para usar el archivo sin la app. Instrucciones de instalación: archivo apps-script/Code.gs del repositorio.'),
+        field('URL del Apps Script (termina en /exec)', urlIn),
+        field('Token compartido (opcional, debe coincidir con SHARED_TOKEN del script)', tokIn),
+        h('label', { class: 'checkbox', style: { marginTop: '8px' } }, autoIn, 'Sincronización automática: guardar cada cambio en Google Sheets'),
+        h('div', { class: 'btn-row', style: { marginTop: '12px' } },
+          h('button', { class: 'btn primary', onclick: guardar }, 'Guardar configuración'),
+          h('button', { class: 'btn', onclick: async () => { guardar(); setStatus('Probando conexión…'); try { await Cloud.test(); setStatus('Conexión correcta ✓', 'ok'); toast('Conexión correcta', 'success'); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Falló la conexión: ' + e.message, 'error'); } } }, 'Probar conexión')),
+        h('div', { style: { marginTop: '12px' } }, status))));
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Sincronización manual')),
+      h('div', { class: 's-bd' },
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); if (!window.confirm('Traer los datos desde Google Sheets reemplazará lo que tienes en este navegador. ¿Continuar?')) return; try { const r = await Cloud.pull(); toast(r.empty ? 'La hoja aún no tiene datos' : `Traído · ${r.equipos} equipos · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (e) { toast('Error al traer: ' + e.message, 'error'); } } }, svg(ic.dl, 14), 'Traer datos (descargar)'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); try { await Cloud.pushData(); toast('Datos guardados en Google Sheets', 'success'); syncStatus(); } catch (e) { toast('Error al guardar: ' + e.message, 'error'); } } }, svg(ic.up, 14), 'Guardar ahora (subir)'),
+          h('button', { class: 'btn', onclick: async () => { if (!Cloud.url) return toast('Configura la URL primero', 'error'); setStatus('Generando hojas de trabajo…'); try { const r = await Cloud.pushSheets(); toast(`Hojas de trabajo actualizadas (${r.hojas})`, 'success'); syncStatus(); } catch (e) { setStatus('Error: ' + e.message, 'err'); toast('Error al generar hojas: ' + e.message, 'error'); } } }, 'Generar hojas de trabajo'),
+        ),
+        h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '12px' } }, 'Respaldo local (sin nube):'),
+        h('div', { class: 'btn-row', style: { marginTop: '4px' } },
+          h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar backup JSON'),
+          h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar backup JSON')))));
+    return root;
+  };
+
   function backupExport() { dl(new Blob([H.exportarBackupJSON()], { type: 'application/json' }), 'sigem-backup-' + H.hoyLocal() + '.json'); toast('Backup JSON exportado', 'success'); }
   function backupImport() {
     const inp = h('input', { type: 'file', accept: 'application/json', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const data = JSON.parse(await f.text()); const msg = `Importar backup?\n· Equipos: ${data.equipos?.length || 0}\n· Eventos: ${data.eventos?.length || 0}\nReemplaza los datos actuales.`; if (!window.confirm(msg)) return; const r = H.importarBackup(data); if (!r.ok) return toast(r.error, 'error'); toast(`Importado · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
@@ -1372,7 +1527,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', conciliacion: 'Conciliación' };
+    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', conciliacion: 'Conciliación', configuracion: 'Configuración' };
     $('#tb-title').textContent = titles[view] || 'SIGEM';
   }
 
@@ -1427,6 +1582,7 @@
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);
+    if (Cloud.auto && Cloud.url) { setTimeout(() => { Cloud.pull().then(r => { if (r && r.ok) { renderView(); refreshChrome(); toast('Sincronizado desde Google Sheets', 'success'); } }).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 400); }
 
     window.addEventListener('hashchange', () => { fromHash(); renderView(); syncNav(); });
     document.addEventListener('keydown', e => {

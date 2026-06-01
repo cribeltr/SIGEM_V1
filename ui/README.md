@@ -71,6 +71,32 @@ HHHA.bootstrapDatos();
 `UI.onChange` re-renderiza la vista actual tras cada `save()`, manteniendo la
 interfaz sincronizada con el estado.
 
+## Almacenamiento en Google Sheets (opcional)
+
+SIGEM puede guardar los datos en un **Google Sheet** mediante un **Apps Script
+Web App**, manteniendo además hojas de trabajo legibles para usar el archivo sin
+la app.
+
+**Instalar** (una vez):
+1. Crea/abre un Google Sheet → menú **Extensiones → Apps Script**.
+2. Pega el contenido de `apps-script/Code.gs`. (Opcional: define `SHARED_TOKEN`.)
+3. **Implementar → Nueva implementación → Aplicación web**: ejecutar como *Yo*,
+   acceso *Cualquiera*. Copia la URL que termina en `/exec`.
+4. En SIGEM → **Configuración**: pega la URL (+ token si lo usaste), **Probar
+   conexión**, activa *Sincronización automática* y **Guardar configuración**.
+
+**Cómo funciona**:
+- El estado completo se guarda **comprimido en una hoja oculta** `_SIGEM_DATA`
+  (las hojas de sistema empiezan con `_` y se ocultan automáticamente).
+- **Generar hojas de trabajo** escribe hojas legibles (Inicio/leyenda, Inventario,
+  Plan anual MP, Hoja de ruta del mes, Pendientes, Bitácora) para trabajar con el
+  archivo aunque no tengas la app.
+- Con *Sincronización automática*: al abrir, **trae** los datos desde la hoja; al
+  cambiar algo, **sube** (con un pequeño retardo). También hay botones manuales
+  *Traer* / *Guardar ahora* / *Generar hojas* y respaldo JSON local.
+- Nota CORS: si abres el `app.html` con `file://` y el navegador bloquea la
+  llamada, hospeda el HTML (Drive, GitHub Pages o un servidor local).
+
 ## Gestión (no solo registro)
 
 Funciones para gestionar, no solo registrar:
