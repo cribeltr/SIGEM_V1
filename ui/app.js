@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b11';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b12';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -127,7 +127,6 @@
     { id: 'inicio', label: 'Cola de trabajo', icon: 'inicio' },
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
-    { id: 'ciclos', label: 'Ciclos', icon: 'ciclos' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
     { id: 'asignaciones', label: 'Asignaciones MP', icon: 'asignaciones' },
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
@@ -146,7 +145,8 @@
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
-    if (NAV.find(n => n.id === v) || v === 'equipo') { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
+    // 'equipo' (ficha) y 'ciclos' (correctivos, fusionado en Eventos) son vistas válidas aunque no estén en el menú.
+    if (NAV.find(n => n.id === v) || v === 'equipo' || v === 'ciclos') { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
   }
 
   // ============================ VIEWS =======================================
@@ -707,6 +707,12 @@
   }
 
   // ---- CICLOS -------------------------------------------------------------
+  // Selector compartido Bitácora / Correctivos (Ciclos vive dentro de Eventos).
+  function segEventos(activo) {
+    return h('div', { class: 'seg' },
+      h('button', { class: activo === 'bitacora' ? 'on' : '', onclick: () => go('eventos') }, 'Bitácora'),
+      h('button', { class: activo === 'correctivos' ? 'on' : '', onclick: () => go('ciclos') }, 'Correctivos'));
+  }
   VIEWS.ciclos = function () {
     const S = H.getState();
     let estado = params.estado || 'abierto';
@@ -729,7 +735,7 @@
     }
     const seg = h('div', { class: 'seg' }, ...[['abierto', 'Abiertos'], ['cerrado', 'Cerrados'], ['anulado', 'Anulados'], ['todos', 'Todos']].map(([v, l]) =>
       h('button', { class: estado === v ? 'on' : '', onclick: e => { estado = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
-    render(); return h('div', {}, h('div', { class: 'filterbar' }, seg), wrap);
+    render(); return h('div', {}, h('div', { class: 'filterbar' }, segEventos('correctivos'), seg), wrap);
   };
 
   // ---- EVENTOS (bitácora global) ------------------------------------------
@@ -758,6 +764,7 @@
     function render() { const list = data(); note.textContent = `${list.length}`; mount(wrap, eventosTable(list, false, cf)); }
     const root = h('div', {},
       h('div', { class: 'filterbar' },
+        segEventos('bitacora'),
         h('input', { type: 'search', placeholder: 'Buscar inv, ejecutor, folio…', oninput: e => { f.q = e.target.value; render(); } }),
         selectEl([['', 'Todo tipo'], ...tipos.map(t => [t, t])], '', { onchange: e => { f.tipo = e.target.value; render(); } }),
         selectEl([['', 'Oficial: todos'], ['si', 'Sólo oficiales'], ['no', 'Sólo borradores']], f.oficial, { onchange: e => { f.oficial = e.target.value; render(); } }),
@@ -1871,7 +1878,7 @@
     mount(railNav, h('div', { class: 'nav-group-lbl' }, 'Trabajo'),
       ...NAV.map(n => { const it = h('div', { class: 'nav-item', onclick: () => go(n.id) }, svg(ic[n.icon]), h('span', {}, n.label), h('span', { class: 'badge-count', style: { display: 'none' } })); navItems[n.id] = it; return it; }));
   }
-  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos')); }
+  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos')); }
   function refreshChrome() {
     const S = H.getState();
     const counts = {
