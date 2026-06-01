@@ -1055,6 +1055,21 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     const p = (equipo.prog || {})[mes];
     return p && ['X', 'R', 'RA', 'PM'].includes(p);
   }
+  // Clasifica la MP del mes de un equipo PROGRAMADO. Devuelve:
+  //   'oficial'  → ejecutada (Si) y oficial (en el maestro)
+  //   'borrador' → ejecutada (Si) pero en borrador (registrada, no oficial)
+  //   'reprog'   → reprogramada (C1–C8)
+  //   'otro'     → FS / NU / Baja / No
+  //   'noreg'    → programada sin ningún registro
+  //   null       → no estaba programada ese mes
+  function claseMPMes(equipo, year, month) {
+    if (!mpProgramadaEnMes(equipo, NUM_MES[month])) return null;
+    const r = resultadoMPMes(equipo, year, month);
+    if (r === 'Si') { const ev = eventoMPMes(equipo.inv, year, month); return (ev && ev.oficial !== 'Sí') ? 'borrador' : 'oficial'; }
+    if (/^C[1-8]$/.test(r || '')) return 'reprog';
+    if (r) return 'otro';
+    return 'noreg';
+  }
 
   // ==========================================================================
   // LÓGICA DE DOMINIO — ciclos correctivos, pendientes auto, efectos de evento
@@ -2196,7 +2211,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
-    mpDelMesEjecutada, mpProgramadaEnMes,
+    mpDelMesEjecutada, mpProgramadaEnMes, claseMPMes,
     // dominio (ciclos / pendientes auto / efectos)
     abrirCiclo, cerrarCiclo, crearPendienteAuto, aplicarEfectosEvento, cambiarEstadoPend,
     // conciliación
@@ -2288,7 +2303,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b7';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b8';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2369,7 +2384,14 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
-  function go(v, p) { view = v; params = p || {}; kbList = null; location.hash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : ''); const a = document.querySelector('.app'); if (a) a.classList.remove('rail-open'); renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0); }
+  let suppressHash = false; // ignora el hashchange que dispara el propio go() (preserva params en memoria)
+  function go(v, p) {
+    view = v; params = p || {}; kbList = null;
+    const newHash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : '');
+    if (location.hash !== newHash) { suppressHash = true; location.hash = newHash; }
+    const a = document.querySelector('.app'); if (a) a.classList.remove('rail-open');
+    renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0);
+  }
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
@@ -2823,7 +2845,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   let pendSel = new Set();
   VIEWS.pendientes = function () {
     const S = H.getState();
-    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: params.tipo || '', q: '', serv: '', ejec: params.ejec || '', record: !!params.record };
+    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: params.tipo || '', q: '', serv: params.serv || '', ejec: params.ejec || '', record: !!params.record };
     pendSel = new Set();
     const cf = colFilters(render);
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
@@ -3039,12 +3061,33 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     let y = params.year || YEAR, m = params.month != null ? params.month : MONTH;
     let estadoMP = params.estadoMP || 'todas';   // todas | pend | ejec
     let sinAsig = !!params.sinAsignar;
+    let mpf = params.mpf || '';   // drill-down desde Cumplimiento (categoría de ejecución)
     mpSel = new Set();
     const keyMes = () => `${y}-${String(m + 1).padStart(2, '0')}`;
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const cf = colFilters(render);
     const estLblMP = s => ({ ejecutada: 'Ejecutada', reprogramada: 'Reprogramada', otro: 'Otro', pendiente: 'Pendiente' }[s] || s);
     const progDe = e => (e.registro && e.registro[MESES[m]] && e.registro[MESES[m]].P) || (e.prog || {})[MESES[m]] || '—';
+    const MPF_LBL = { prog: 'Programadas', oficial: 'Ejecutadas oficiales', borrador: 'Ejecutadas borrador', realiz: 'Ejecutadas', reprog: 'Reprogramadas', noejec: 'No registradas', sinreg: 'Sin registro', asig: 'Con responsable', sinasig: 'Sin asignar', fs: 'FS', nu: 'NU', baja: 'Baja' };
+    function mpfPred(asig) {
+      if (!mpf || mpf === 'prog') return null;
+      if (mpf === 'asig') return e => !!asig[e.inv];
+      if (mpf === 'sinasig') return e => !asig[e.inv];
+      return e => {
+        const c = H.claseMPMes(e, y, m);
+        if (mpf === 'oficial') return c === 'oficial';
+        if (mpf === 'borrador') return c === 'borrador';
+        if (mpf === 'realiz') return c === 'oficial' || c === 'borrador';
+        if (mpf === 'reprog') return c === 'reprog';
+        if (mpf === 'noejec') return c === 'otro' || c === 'noreg';
+        if (mpf === 'sinreg') return c === 'noreg';
+        const r = H.resultadoMPMes(e, y, m);
+        if (mpf === 'fs') return r === 'FS';
+        if (mpf === 'nu') return r === 'NU';
+        if (mpf === 'baja') return r === 'Baja';
+        return true;
+      };
+    }
     const bulkAsig = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formAsignarEjecutor([...mpSel], keyMes()) }, 'Asignar ejecutor');
     function updBulk() { const on = mpSel.size; bulkAsig.style.display = on ? '' : 'none'; if (on) { bulkAsig.textContent = `Asignar ejecutor (${on})`; } }
     function data() {
@@ -3053,6 +3096,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (estadoMP === 'ejec') list = list.filter(e => H.mpDelMesEjecutada(e, y, m));
       if (estadoMP === 'pend') list = list.filter(e => H.mpEstadoMes(e, y, m) === 'pendiente');
       if (sinAsig) list = list.filter(e => !asig[e.inv]);
+      const pred = mpfPred(asig); if (pred) list = list.filter(pred);
       list = cf.apply(list);
       return { list, asig };
     }
@@ -3092,6 +3136,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         field(null, selectEl([YEAR + 1, YEAR, YEAR - 1].map(yy => [yy, yy]), y, { onchange: e => { y = +e.target.value; mpSel.clear(); render(); } })),
         seg,
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: sinAsig ? true : false, onchange: e => { sinAsig = e.target.checked; mpSel.clear(); render(); } }), 'Sin asignar'),
+        mpf ? h('span', { class: 'chip', style: { color: 'var(--accent)', borderColor: 'var(--accent)' } }, h('b', {}, 'Filtro: ' + (MPF_LBL[mpf] || mpf)), h('span', { class: 'x', title: 'Quitar filtro', onclick: () => go('asignaciones', { year: y, month: m }) }, '×')) : null,
         h('div', { class: 'tb-spacer' }),
         bulkAsig, note),
       wrap);
@@ -3116,6 +3161,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
     let modo = params.modo || 'mes';
     const wrap = h('div', {}); const trendBox = h('div', {});
+    const cfSv = colFilters(render);     // embudo de la tabla Por servicio
+    const cfResp = colFilters(render);   // embudo de la tabla Por responsable
     function filasPorResponsable() {
       const cargo = {};
       S.equipos.forEach(e => { const en = H.encargadoDe(e); if (en) cargo[en] = (cargo[en] || 0) + 1; });
@@ -3151,20 +3198,21 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       const vivos = S.equipos.filter(e => e.estado !== 'baja');
       return MESES.map((mm, i) => {
         const asig = (S.asignacionesMP || {})[`${y}-${String(i + 1).padStart(2, '0')}`] || {};
-        let prog = 0, asignadas = 0, realiz = 0, reprog = 0, fs = 0, nu = 0, baja = 0, sinReg = 0;
+        let prog = 0, asignadas = 0, oficial = 0, borrador = 0, reprog = 0, fs = 0, nu = 0, baja = 0, sinReg = 0;
         vivos.forEach(e => {
-          if (!H.mpProgramadaEnMes(e, mm)) return;
+          const c = H.claseMPMes(e, y, i);
+          if (!c) return;            // no programada ese mes
           prog++;
           if (asig[e.inv]) asignadas++;
-          const r = H.resultadoMPMes(e, y, i);
-          if (r === 'Si') realiz++;
-          else if (/^C[1-8]$/.test(r || '')) reprog++;
-          else if (r === 'FS') fs++;
-          else if (r === 'NU') nu++;
-          else if (r === 'Baja') baja++;
-          else sinReg++;
+          if (c === 'oficial') oficial++;
+          else if (c === 'borrador') borrador++;
+          else if (c === 'reprog') reprog++;
+          else if (c === 'noreg') sinReg++;
+          else { const r = H.resultadoMPMes(e, y, i); if (r === 'FS') fs++; else if (r === 'NU') nu++; else if (r === 'Baja') baja++; else sinReg++; }
         });
-        return { mm, i, prog, asignadas, sinAsig: prog - asignadas, realiz, reprog, fs, nu, baja, sinReg, pct: prog ? Math.round(realiz / prog * 100) : null };
+        const realiz = oficial + borrador;
+        const noReg = prog - oficial - borrador - reprog;   // sin ejecutar ni reprogramar
+        return { mm, i, prog, asignadas, sinAsig: prog - asignadas, oficial, borrador, realiz, reprog, fs, nu, baja, sinReg, noReg, pct: prog ? Math.round(realiz / prog * 100) : null };
       });
     }
     function pctPill(v) { if (v == null) return h('span', { class: 'faint' }, '—'); return h('span', { class: 'pill ' + (v >= 90 ? 'op' : v >= 60 ? 'st' : 'noop') }, v + '%'); }
@@ -3186,61 +3234,69 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         })))));
     }
     function renderServicio() {
-      const rows = filasPorServicio();
+      const rows = cfSv.apply(filasPorServicio());
       const tot = rows.reduce((a, r) => ({ total: a.total + r.total, vivos: a.vivos + r.vivos, op: a.op + r.op, no: a.no + r.no, stc: a.stc + r.stc, prog: a.prog + r.prog, ejec: a.ejec + r.ejec, atr: a.atr + r.atr, pend: a.pend + r.pend }), { total: 0, vivos: 0, op: 0, no: 0, stc: 0, prog: 0, ejec: 0, atr: 0, pend: 0 });
       const totPctMP = tot.prog ? Math.round(tot.ejec / tot.prog * 100) : null;
       const totPctOp = tot.vivos ? Math.round(tot.op / tot.vivos * 100) : null;
-      const fila = (r, isTot) => h('tr', { style: isTot ? { fontWeight: 700, background: 'var(--surface-2)' } : null, onclick: isTot ? null : () => go('equipos', { servicio: r.sv }) },
-        h('td', {}, isTot ? 'TOTAL' : r.sv), h('td', { class: 'num' }, r.total),
-        h('td', { class: 'num' }, r.op), h('td', { class: 'num', style: r.no ? { color: 'var(--noop)' } : null }, r.no), h('td', { class: 'num', style: r.stc ? { color: 'var(--st)' } : null }, r.stc),
+      // celda numérica cliqueable hacia una vista filtrada
+      const nc = (v, go2, color) => h('td', { class: 'num' + (v ? ' link' : ''), style: (color && v) ? { color } : null, onclick: v ? go2 : null }, v || '—');
+      const fila = (r, isTot) => h('tr', { style: isTot ? { fontWeight: 700, background: 'var(--surface-2)' } : null },
+        isTot ? h('td', {}, 'TOTAL') : h('td', { class: 'link', onclick: () => go('equipos', { servicio: r.sv }) }, r.sv),
+        isTot ? h('td', { class: 'num' }, r.total) : nc(r.total, () => go('equipos', { servicio: r.sv })),
+        isTot ? h('td', { class: 'num' }, r.op) : nc(r.op, () => go('equipos', { servicio: r.sv, estado: 'operativo' })),
+        isTot ? h('td', { class: 'num' }, r.no) : nc(r.no, () => go('equipos', { servicio: r.sv, estado: 'no_operativo' }), 'var(--noop)'),
+        isTot ? h('td', { class: 'num' }, r.stc) : nc(r.stc, () => go('equipos', { servicio: r.sv, estado: 'en_servicio_tecnico' }), 'var(--st)'),
         h('td', {}, pctPill(isTot ? totPctOp : r.pctOp)),
         h('td', { class: 'num' }, r.prog ? (r.ejec + '/' + r.prog) : '—'),
         h('td', { style: { minWidth: '130px' } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(isTot ? totPctMP : r.pctMP), pctPill(isTot ? totPctMP : r.pctMP))),
-        h('td', { class: 'num', style: r.atr ? { color: 'var(--noop)' } : null }, r.atr || '—'),
-        h('td', { class: 'num' }, r.pend || '—'));
+        isTot ? h('td', { class: 'num' }, r.atr) : nc(r.atr, () => go('equipos', { servicio: r.sv, mpAtras: 1 }), 'var(--noop)'),
+        isTot ? h('td', { class: 'num' }, r.pend) : nc(r.pend, () => go('pendientes', { serv: r.sv })));
       mount(wrap, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Servicio'), h('th', { class: 'num' }, 'Equipos'), h('th', { class: 'num' }, 'Oper.'), h('th', { class: 'num' }, 'No op.'), h('th', { class: 'num' }, 'ST'), h('th', {}, '% Operativo'), h('th', {}, `MP ${MES_ESP(m)}`), h('th', {}, '% Cumplimiento MP'), h('th', { class: 'num' }, 'Atrasadas'), h('th', { class: 'num' }, 'Pend.'))),
+        h('thead', {}, h('tr', {}, cfSv.thF('sv', 'Servicio', r => r.sv), h('th', { class: 'num' }, 'Equipos'), h('th', { class: 'num' }, 'Oper.'), h('th', { class: 'num' }, 'No op.'), h('th', { class: 'num' }, 'ST'), h('th', {}, '% Operativo'), h('th', {}, `MP ${MES_ESP(m)}`), h('th', {}, '% Cumplimiento MP'), h('th', { class: 'num' }, 'Atrasadas'), h('th', { class: 'num' }, 'Pend.'))),
         h('tbody', {}, ...rows.map(r => fila(r)), fila(tot, true)))));
     }
     function renderResponsable() {
-      const rows = filasPorResponsable();
+      const rows = cfResp.apply(filasPorResponsable());
+      const nc = (v, go2, color) => h('td', { class: 'num' + (v ? ' link' : ''), style: (color && v) ? { color } : null, onclick: v ? go2 : null }, v || '—');
       mount(wrap, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Responsable'), h('th', { class: 'num' }, 'Pend. abiertos'), h('th', { class: 'num' }, 'Vencidos'), h('th', { class: 'num' }, `MP ${MES_ESP(m)}`), h('th', { class: 'num' }, `MP ${y}`), h('th', { class: 'num' }, `Eventos ${y}`), h('th', { class: 'num' }, 'Equipos a cargo'))),
-        h('tbody', {}, ...rows.map(r => h('tr', { onclick: () => go('pendientes', { ejec: r.ej }) },
-          h('td', {}, r.ej), h('td', { class: 'num' }, r.pend || h('span', { class: 'faint' }, '0')),
-          h('td', { class: 'num', style: r.venc ? { color: 'var(--noop)' } : null }, r.venc || '—'),
+        h('thead', {}, h('tr', {}, cfResp.thF('ej', 'Responsable', r => r.ej), h('th', { class: 'num' }, 'Pend. abiertos'), h('th', { class: 'num' }, 'Vencidos'), h('th', { class: 'num' }, `MP ${MES_ESP(m)}`), h('th', { class: 'num' }, `MP ${y}`), h('th', { class: 'num' }, `Eventos ${y}`), h('th', { class: 'num' }, 'Equipos a cargo'))),
+        h('tbody', {}, ...rows.map(r => h('tr', {},
+          h('td', { class: 'link', onclick: () => go('pendientes', { ejec: r.ej }) }, r.ej),
+          nc(r.pend, () => go('pendientes', { ejec: r.ej })),
+          nc(r.venc, () => go('pendientes', { ejec: r.ej, vencidos: 1 }), 'var(--noop)'),
           h('td', { class: 'num' }, r.mpMes || '—'), h('td', { class: 'num' }, r.mpAno || '—'), h('td', { class: 'num' }, r.evAno || '—'), h('td', { class: 'num' }, r.cargo || '—')))))));
     }
     function renderMes() {
       const rows = filasPorMes();
-      const T = rows.reduce((a, r) => ({ prog: a.prog + r.prog, asignadas: a.asignadas + r.asignadas, sinAsig: a.sinAsig + r.sinAsig, realiz: a.realiz + r.realiz, reprog: a.reprog + r.reprog, fs: a.fs + r.fs, nu: a.nu + r.nu, baja: a.baja + r.baja, sinReg: a.sinReg + r.sinReg }), { prog: 0, asignadas: 0, sinAsig: 0, realiz: 0, reprog: 0, fs: 0, nu: 0, baja: 0, sinReg: 0 });
+      const T = rows.reduce((a, r) => ({ prog: a.prog + r.prog, asignadas: a.asignadas + r.asignadas, sinAsig: a.sinAsig + r.sinAsig, oficial: a.oficial + r.oficial, borrador: a.borrador + r.borrador, realiz: a.realiz + r.realiz, reprog: a.reprog + r.reprog, fs: a.fs + r.fs, nu: a.nu + r.nu, baja: a.baja + r.baja, sinReg: a.sinReg + r.sinReg, noReg: a.noReg + r.noReg }), { prog: 0, asignadas: 0, sinAsig: 0, oficial: 0, borrador: 0, realiz: 0, reprog: 0, fs: 0, nu: 0, baja: 0, sinReg: 0, noReg: 0 });
       const Tpct = T.prog ? Math.round(T.realiz / T.prog * 100) : null;
-      const num = (v, color) => h('td', { class: 'num', style: (color && v) ? { color } : null }, v || '—');
+      // Celda numérica cliqueable → Asignaciones del mes, filtrada por categoría (mpf).
+      const cell = (v, r, mpf, color) => h('td', { class: 'num' + (v ? ' link' : ''), style: (color && v) ? { color } : null, title: v ? 'Ver estos equipos' : null, onclick: v ? () => go('asignaciones', { year: y, month: r.i, mpf }) : null }, v || '—');
       const mesCell = r => h('td', { class: 'link', title: 'Abrir la programación MP de este mes', onclick: () => go('asignaciones', { year: y, month: r.i }) }, MES_ESP(r.i));
+      const totCell = (v, color) => h('td', { class: 'num', style: (color && v) ? { color } : null }, v);
       const totRow = (...tds) => h('tr', { style: { fontWeight: 700, background: 'var(--surface-2)' } }, h('td', {}, 'Total año'), ...tds);
       const t1 = h('div', { class: 'section', style: { marginBottom: '12px' } },
-        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · por mes y resultado`), h('span', { class: 's-sub' }, 'Clic en un mes para abrir su programación')),
+        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · ejecución por mes`), h('span', { class: 's-sub' }, 'Clic en cualquier número para ver esos equipos')),
         h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Realizadas'), h('th', { class: 'num' }, 'Reprog.'), h('th', { class: 'num' }, 'FS'), h('th', { class: 'num' }, 'NU'), h('th', { class: 'num' }, 'Baja'), h('th', { class: 'num' }, 'Sin registro'))),
+          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Ejec. oficiales'), h('th', { class: 'num' }, 'Ejec. borrador'), h('th', { class: 'num' }, 'Reprogramadas'), h('th', { class: 'num', title: 'Programadas sin ejecutar ni reprogramar (incluye FS/NU/Baja y sin dato)' }, 'No registradas'), h('th', {}, 'Cumplimiento'))),
           h('tbody', {},
-            ...rows.map(r => h('tr', {}, mesCell(r), h('td', { class: 'num' }, r.prog || '—'), num(r.realiz, 'var(--op)'), num(r.reprog, 'var(--st)'), num(r.fs, 'var(--noop)'), num(r.nu, 'var(--noop)'), num(r.baja, 'var(--noop)'), h('td', { class: 'num muted' }, r.sinReg || '—'))),
-            totRow(h('td', { class: 'num' }, T.prog), h('td', { class: 'num' }, T.realiz), h('td', { class: 'num' }, T.reprog), h('td', { class: 'num' }, T.fs), h('td', { class: 'num' }, T.nu), h('td', { class: 'num' }, T.baja), h('td', { class: 'num' }, T.sinReg)))))));
-      const t2 = h('div', { class: 'section' },
-        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · cumplimiento por mes`), h('span', { class: 's-sub' }, 'Asignación y ejecución')),
-        h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Asignadas'), h('th', { class: 'num' }, 'Sin asignar'), h('th', { class: 'num' }, 'Ejecutadas'), h('th', { class: 'num' }, 'Pendientes'), h('th', {}, 'Cumplimiento'))),
-          h('tbody', {},
-            ...rows.map(r => h('tr', {}, mesCell(r), h('td', { class: 'num' }, r.prog || '—'), num(r.asignadas), h('td', { class: 'num', style: r.sinAsig ? { color: 'var(--st)' } : null }, r.sinAsig || '—'), num(r.realiz, 'var(--op)'), h('td', { class: 'num', style: r.sinReg ? { color: 'var(--noop)' } : null }, r.sinReg || '—'),
+            ...rows.map(r => h('tr', {}, mesCell(r), cell(r.prog, r, 'prog'), cell(r.oficial, r, 'oficial', 'var(--op)'), cell(r.borrador, r, 'borrador', 'var(--st)'), cell(r.reprog, r, 'reprog', 'var(--st)'), cell(r.noReg, r, 'noejec', 'var(--noop)'),
               h('td', { style: { minWidth: '150px' } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(r.pct), pctPill(r.pct))))),
-            totRow(h('td', { class: 'num' }, T.prog), h('td', { class: 'num' }, T.asignadas), h('td', { class: 'num' }, T.sinAsig), h('td', { class: 'num' }, T.realiz), h('td', { class: 'num' }, T.sinReg),
-              h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(Tpct), pctPill(Tpct)))))))));
+            totRow(totCell(T.prog), totCell(T.oficial), totCell(T.borrador), totCell(T.reprog), totCell(T.noReg), h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, bar(Tpct), pctPill(Tpct))))))) ));
+      const t2 = h('div', { class: 'section' },
+        h('div', { class: 's-hd' }, h('h3', {}, `MP ${y} · por resultado (detalle)`), h('span', { class: 's-sub' }, 'Asignación y resultados — clic en un número para filtrar')),
+        h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', { class: 'num' }, 'Programadas'), h('th', { class: 'num' }, 'Asignadas'), h('th', { class: 'num' }, 'Sin asignar'), h('th', { class: 'num' }, 'Realizadas'), h('th', { class: 'num' }, 'Reprog.'), h('th', { class: 'num' }, 'FS'), h('th', { class: 'num' }, 'NU'), h('th', { class: 'num' }, 'Baja'), h('th', { class: 'num' }, 'Sin registro'))),
+          h('tbody', {},
+            ...rows.map(r => h('tr', {}, mesCell(r), cell(r.prog, r, 'prog'), cell(r.asignadas, r, 'asig'), cell(r.sinAsig, r, 'sinasig', 'var(--st)'), cell(r.realiz, r, 'realiz', 'var(--op)'), cell(r.reprog, r, 'reprog', 'var(--st)'), cell(r.fs, r, 'fs', 'var(--noop)'), cell(r.nu, r, 'nu', 'var(--noop)'), cell(r.baja, r, 'baja', 'var(--noop)'), cell(r.sinReg, r, 'sinreg', 'var(--noop)'))),
+            totRow(totCell(T.prog), totCell(T.asignadas), totCell(T.sinAsig), totCell(T.realiz), totCell(T.reprog), totCell(T.fs), totCell(T.nu), totCell(T.baja), totCell(T.sinReg))))) ));
       mount(wrap, h('div', {}, t1, t2));
     }
     function render() { renderTrend(); if (modo === 'servicio') renderServicio(); else if (modo === 'responsable') renderResponsable(); else renderMes(); }
     function exportar() {
       if (modo === 'mes') {
-        const rows = filasPorMes().map(r => [MES_ESP(r.i), r.prog, r.realiz, r.reprog, r.fs, r.nu, r.baja, r.sinReg, r.asignadas, r.sinAsig, r.pct == null ? '' : r.pct + '%']);
-        return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Realizadas', 'Reprog.', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `SIGEM_mp_por_mes_${y}.xlsx`);
+        const rows = filasPorMes().map(r => [MES_ESP(r.i), r.prog, r.oficial, r.borrador, r.reprog, r.noReg, r.realiz, r.fs, r.nu, r.baja, r.sinReg, r.asignadas, r.sinAsig, r.pct == null ? '' : r.pct + '%']);
+        return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `SIGEM_mp_por_mes_${y}.xlsx`);
       }
       if (modo === 'responsable') {
         const rows = filasPorResponsable().map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
@@ -3709,6 +3765,25 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         ...S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
       ]
     });
+    // MP por mes (resumen anual de cumplimiento) — espejo de la vista Cumplimiento › Por mes
+    const vivosMP = S.equipos.filter(e => e.estado !== 'baja');
+    const mpRows = MESES.map((mm, i) => {
+      const asig = (S.asignacionesMP || {})[`${YEAR}-${String(i + 1).padStart(2, '0')}`] || {};
+      let prog = 0, asg = 0, ofi = 0, bor = 0, rep = 0, fs = 0, nu = 0, baja = 0, sin = 0;
+      vivosMP.forEach(e => {
+        const c = H.claseMPMes(e, YEAR, i); if (!c) return; prog++; if (asig[e.inv]) asg++;
+        if (c === 'oficial') ofi++; else if (c === 'borrador') bor++; else if (c === 'reprog') rep++; else if (c === 'noreg') sin++;
+        else { const r = H.resultadoMPMes(e, YEAR, i); if (r === 'FS') fs++; else if (r === 'NU') nu++; else if (r === 'Baja') baja++; else sin++; }
+      });
+      const realiz = ofi + bor;
+      return [MES_ESP(i), prog, ofi, bor, rep, prog - ofi - bor - rep, realiz, fs, nu, baja, sin, asg, prog - asg, prog ? Math.round(realiz / prog * 100) + '%' : ''];
+    });
+    sheets.push({
+      name: 'MP por mes', hidden: false, rows: [
+        ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'],
+        ...mpRows
+      ]
+    });
     return sheets;
   }
 
@@ -4093,7 +4168,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     setTimeout(recordatoriosAlAbrir, 600);
     if (Cloud.auto && Cloud.connected) { setTimeout(() => { Cloud.pull().then(r => { if (r && r.ok) { renderView(); refreshChrome(); toast('Sincronizado desde Google Sheets', 'success'); } }).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 400); }
 
-    window.addEventListener('hashchange', () => { fromHash(); renderView(); syncNav(); });
+    window.addEventListener('hashchange', () => { if (suppressHash) { suppressHash = false; return; } fromHash(); renderView(); syncNav(); });
     document.addEventListener('keydown', e => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); cmdkEl ? closeCmdk() : openCmdk(); }
       else if (e.key === 'Escape') { if (cmdkEl) closeCmdk(); else if (drawerOpen) closeDrawer(); else closePop(); }

@@ -551,6 +551,21 @@
     const p = (equipo.prog || {})[mes];
     return p && ['X', 'R', 'RA', 'PM'].includes(p);
   }
+  // Clasifica la MP del mes de un equipo PROGRAMADO. Devuelve:
+  //   'oficial'  → ejecutada (Si) y oficial (en el maestro)
+  //   'borrador' → ejecutada (Si) pero en borrador (registrada, no oficial)
+  //   'reprog'   → reprogramada (C1–C8)
+  //   'otro'     → FS / NU / Baja / No
+  //   'noreg'    → programada sin ningún registro
+  //   null       → no estaba programada ese mes
+  function claseMPMes(equipo, year, month) {
+    if (!mpProgramadaEnMes(equipo, NUM_MES[month])) return null;
+    const r = resultadoMPMes(equipo, year, month);
+    if (r === 'Si') { const ev = eventoMPMes(equipo.inv, year, month); return (ev && ev.oficial !== 'Sí') ? 'borrador' : 'oficial'; }
+    if (/^C[1-8]$/.test(r || '')) return 'reprog';
+    if (r) return 'otro';
+    return 'noreg';
+  }
 
   // ==========================================================================
   // LÓGICA DE DOMINIO — ciclos correctivos, pendientes auto, efectos de evento
@@ -1692,7 +1707,7 @@
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
-    mpDelMesEjecutada, mpProgramadaEnMes,
+    mpDelMesEjecutada, mpProgramadaEnMes, claseMPMes,
     // dominio (ciclos / pendientes auto / efectos)
     abrirCiclo, cerrarCiclo, crearPendienteAuto, aplicarEfectosEvento, cambiarEstadoPend,
     // conciliación
