@@ -360,6 +360,8 @@ td.shrink { width: 1%; }
 .empty .big { font-size: 26px; margin-bottom: 6px; opacity: .6; }
 .muted { color: var(--muted); } .faint { color: var(--faint); }
 .hsplit { display: flex; gap: 18px; align-items: flex-start; }
+.hsplit > * { min-width: 0; }   /* permite que las tablas hagan scroll interno y no empujen la vista */
+.section { min-width: 0; }
 .spinner { width: 15px; height: 15px; border: 2px solid var(--border-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 hr.sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }

@@ -395,13 +395,24 @@
         h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
       head, banner, tabs, body);
   };
+  function eventoMini(e) {
+    const estado = e.estado ? e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico') : '';
+    return h('div', { class: 'mini-row' + (e.anulado ? ' done' : ''), style: { display: 'block', cursor: e.anulado ? 'default' : 'pointer' }, onclick: e.anulado ? null : () => formEditarEvento(e) },
+      h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, fmtFecha(e.fecha)),
+        h('b', { style: { fontSize: '12px' } }, H.etiquetaTipoEvento(e)),
+        e.resultado ? h('span', { class: 'mono', style: { fontSize: '11px' } }, e.resultado) : null,
+        e.anulado ? h('span', { class: 'tag' }, 'anulado') : (e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador'))),
+      h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, [e.ejecutor, e.folio].filter(Boolean).join(' · ') || '—'),
+      e.obs ? h('div', { class: 'm-txt', style: { fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' } }, e.obs) : null);
+  }
   function tabResumen(eq) {
-    const evs = H.eventosDe(eq.inv).slice(-6).reverse();
+    const evs = H.eventosDe(eq.inv).slice(-8).reverse();
     const ciclosAb = H.ciclosAbiertosDe(eq.inv);
     return h('div', { class: 'hsplit', style: { flexWrap: 'wrap' } },
-      h('div', { class: 'section', style: { flex: '1', minWidth: '320px' } },
-        h('div', { class: 's-hd' }, h('h3', {}, 'Últimos eventos')),
-        h('div', { class: 's-bd flush' }, evs.length ? eventosTable(evs, true) : h('div', { class: 'empty' }, 'Sin eventos'))),
+      h('div', { class: 'section', style: { flex: '1', minWidth: '300px' } },
+        h('div', { class: 's-hd' }, h('h3', {}, 'Últimos eventos'), h('div', { class: 'tb-spacer' }), evs.length ? h('button', { class: 'btn sm ghost', onclick: () => go('equipo', { inv: eq.inv, tab: 'bitacora' }) }, 'Ver bitácora') : null),
+        h('div', { class: 's-bd' }, evs.length ? h('div', { class: 'row-list' }, ...evs.map(eventoMini)) : h('div', { class: 'empty' }, 'Sin eventos'))),
       h('div', { style: { width: '280px', flex: '0 0 auto' } },
         h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclo correctivo')),
           h('div', { class: 's-bd' }, ciclosAb.length

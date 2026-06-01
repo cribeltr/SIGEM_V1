@@ -625,7 +625,10 @@
     }
     // Ciclo
     if (tipo === 'Solicitud de trabajo') {
-      abrirCiclo(ev.folio, ev.inv, ev.fecha, ev.ejecutor, ev.obs);
+      const c = abrirCiclo(ev.folio, ev.inv, ev.fecha, ev.ejecutor, ev.obs);
+      // Si el folio se generó automáticamente, se copia al evento para que quede
+      // visible y vinculado al ciclo (antes el evento quedaba sin folio).
+      if (c && !ev.folio) ev.folio = c.folio;
     }
     if (tipo === 'Reparación' && ev.estado === 'operativo' && ev.folio) {
       const c = state.ciclos.find(x => x.folio === ev.folio && x.estado === 'abierto');
