@@ -89,9 +89,20 @@ faltaba** en la UI, sin cambiar el diseño:
   ("hace N días · encargado", en rojo si >30 días).
 - **Formulario de evento**: campos faltantes — OC (*Empresa, Vía, Folio informe TD*),
   Recepción (*N° envío original, Folio guía*), MP (*Ejecutor 2*), Envío (*Ejecutor*).
-- **Exportar Excel**: libro completo de 10 hojas — *Léeme*, *Por resolver*, *Eventos*,
-  *Equipos*, *PMP_AAAA*, *Registro_MP-AAAA* (espejo del maestro, round-trip con
-  conciliación), *Pendientes*, *Conflictos*, *Ciclos* y *Eventos automáticos* (oculta).
+- **Exportar Excel** → "Cuaderno de operaciones" autónomo, pensado para usarse **sin
+  la aplicación**:
+  - **Inicio** — portada con instrucciones de uso y **leyenda de códigos** (estados,
+    resultados de MP con la descripción de cada causal C1–C8, tipos de pendiente,
+    códigos de programación).
+  - **Tablero** — indicadores estáticos + **estado por servicio** (equipos, no
+    operativos, % MP del mes, pendientes).
+  - **Hoja de ruta MP · mes** — MP programadas del mes para **imprimir y registrar a
+    mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Observación*.
+  - **Plan anual MP** — carta gantt P/R por mes (encabezados de mes combinados).
+  - **Inventario** — catálogo completo con estado, días en estado, pendientes y ciclo.
+  - **Pendientes** — con columnas (✎) *Avance · Nuevo estado · Fecha* para seguimiento offline.
+  - **Ciclos correctivos** y **Bitácora** (historial; marca Manual/Automático).
+  - Todas las tablas con **autofiltro** y títulos combinados.
 
 ## Notas
 - Mismo `STORAGE_KEY` que el núcleo (`hhha_v1_data`): comparte datos con cualquier

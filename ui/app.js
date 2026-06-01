@@ -864,100 +864,185 @@
     const inp = h('input', { type: 'file', accept: 'application/json', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const data = JSON.parse(await f.text()); const msg = `Importar backup?\n· Equipos: ${data.equipos?.length || 0}\n· Eventos: ${data.eventos?.length || 0}\nReemplaza los datos actuales.`; if (!window.confirm(msg)) return; const r = H.importarBackup(data); if (!r.ok) return toast(r.error, 'error'); toast(`Importado · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
     document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 1000);
   }
-  // Export Excel completo (portado del sistema v1.0): Léeme, Por resolver, Eventos,
-  // Equipos, PMP_AAAA, Registro_MP-AAAA, Pendientes, Conflictos, Ciclos, y la hoja
-  // oculta de eventos automáticos del maestro.
+  // Export Excel — "Cuaderno de operaciones" autónomo, pensado para trabajar SIN
+  // la aplicación: portada con instrucciones + leyenda de códigos, tablero por
+  // servicio, hoja de ruta imprimible (columnas en blanco para registrar a mano),
+  // plan anual P/R, inventario, pendientes (con columnas para actualizar), ciclos
+  // y bitácora. Todas las tablas con autofiltro y títulos combinados.
   function excelExport() {
     if (!window.XLSX) return toast('XLSX no disponible (sin conexión)', 'error');
     const S = H.getState(); S.equipos.forEach(H.recalcEstadoEquipo);
     const wb = XLSX.utils.book_new();
-    const year = new Date().getFullYear(), hoy = H.hoyLocal();
-    const addPlain = (ws, nombre, cols) => { if (cols) ws['!cols'] = cols; XLSX.utils.book_append_sheet(wb, ws, nombre); };
-    const tabla = (rows, nombre, cols) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ ' ': '(sin datos)' }]); if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] }; addPlain(ws, nombre, cols); };
-    const mapEv = H.mapearEventoFila;
-    const colsEv = [{ wch: 5 }, { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 9 }, { wch: 13 }, { wch: 20 }, { wch: 21 }, { wch: 8 }, { wch: 13 }, { wch: 13 }, { wch: 20 }, { wch: 16 }, { wch: 42 }, { wch: 8 }, { wch: 12 }];
-    const evNoAnul = S.eventos.filter(e => !e.anulado);
-    const evMios = evNoAnul.filter(e => !H.eventoEsAuto(e));
-    const evAuto = evNoAnul.filter(H.eventoEsAuto);
+    const year = YEAR, hoy = H.hoyLocal(), periodo = MES_ESP(MONTH) + ' ' + year;
+    const M = (r, c0, c1) => ({ s: { r, c: c0 }, e: { r, c: c1 } });
+    function tableSheet(title, subtitle, header, rows, cols) {
+      const aoa = [[title]]; aoa.push(subtitle ? [subtitle] : []);
+      const headRow = aoa.length; aoa.push(header); rows.forEach(r => aoa.push(r));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      if (cols) ws['!cols'] = cols;
+      ws['!merges'] = [M(0, 0, Math.max(header.length - 1, 1))];
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: headRow, c: 0 }, e: { r: headRow + rows.length, c: header.length - 1 } }) };
+      return ws;
+    }
+    const add = (ws, name) => XLSX.utils.book_append_sheet(wb, ws, name);
+
+    // datos base
+    const op = S.equipos.filter(e => e.estado === 'operativo');
+    const noOp = S.equipos.filter(e => e.estado === 'no_operativo');
+    const enST = S.equipos.filter(e => e.estado === 'en_servicio_tecnico');
+    const baja = S.equipos.filter(e => e.estado === 'baja');
+    const eqVivos = S.equipos.filter(e => e.estado !== 'baja');
+    const alerta30 = S.equipos.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
+    const mpProg = eqVivos.filter(e => H.mpProgramadaEnMes(e, MESES[MONTH]));
+    const mpEjec = mpProg.filter(e => H.mpDelMesEjecutada(e, YEAR, MONTH));
+    const mpPendL = mpProg.filter(e => H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
+    const pct = mpProg.length ? Math.round(mpEjec.length / mpProg.length * 100) : 0;
+    const mpAtras = eqVivos.filter(e => [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
     const pendAb = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const pendVenc = pendAb.filter(p => p.fechaComp && p.fechaComp < hoy);
     const ciclosAb = S.ciclos.filter(c => c.estado === 'abierto');
-    const borr = evMios.filter(e => e.oficial !== 'Sí');
+    const borr = S.eventos.filter(e => e.oficial !== 'Sí' && !e.anulado);
 
-    // 0. Léeme
-    const leeme = [
-      ['SIGEM — Gestión de equipos biomédicos críticos'], ['Exportado el', hoy], [],
-      ['RESUMEN'], ['Equipos en catálogo', S.equipos.length], ['Eventos registrados por ti', evMios.length],
-      ['   · de ellos, borradores por oficializar', borr.length], ['Eventos automáticos (del maestro)', evAuto.length],
-      ['Pendientes por resolver', pendAb.length], ['Ciclos correctivos abiertos', ciclosAb.length], [],
-      ['QUÉ CONTIENE CADA HOJA'],
-      ['Por resolver', 'Lo accionable: pendientes abiertos, ciclos abiertos y borradores. Pensada para imprimir.'],
-      ['Eventos', 'Lo que TÚ registraste (incluye borradores; mira la columna Oficial).'],
-      ['Equipos', 'Catálogo de equipos con su estado actual.'],
-      ['PMP_' + year, 'Programación anual de mantención (espejo de tu carta gantt / maestro).'],
-      ['Registro_MP-' + year, 'Programado (P) y Realizado (R) de la MP, por mes.'],
-      ['Pendientes', 'Todos los pendientes con su estado (No iniciado / En proceso / Resuelto).'],
-      ['Ciclos correctivos', 'Ciclos de falla, con apertura y cierre.'],
-      ['Eventos (automáticos)', 'HOJA OCULTA. Eventos que generó el programa al conciliar el maestro.']
+    // ===== 1) INICIO (portada + instrucciones + leyenda) =====
+    const inicio = [
+      ['SIGEM · Cuaderno de operaciones — Equipos Biomédicos Críticos'],
+      ['Documento para trabajar SIN acceso a la aplicación'],
+      [],
+      ['Exportado el', hoy, '', 'Periodo MP', periodo],
+      ['Equipos en catálogo', S.equipos.length, '', 'MP del mes', mpEjec.length + '/' + mpProg.length + ' (' + pct + '%)'],
+      [],
+      ['CÓMO USAR ESTE ARCHIVO'],
+      ['1.', 'Cada hoja es independiente. Usa los filtros (▼) de los encabezados para ordenar y buscar.'],
+      ['2.', '"Hoja de ruta MP" está pensada para imprimir y registrar la mantención del mes a mano.'],
+      ['3.', 'Las columnas con (✎) están en blanco para que las completes tú.'],
+      ['4.', 'Al volver a la aplicación, transcribe lo registrado (o importa el respaldo JSON).'],
+      [],
+      ['CONTENIDO'],
+      ['Tablero', 'Indicadores y estado por servicio, a la fecha de exportación.'],
+      ['Hoja de ruta MP', 'MP programadas del mes para ejecutar y firmar manualmente.'],
+      ['Plan anual MP', 'Carta gantt: Programado (P) y Realizado (R) por mes.'],
+      ['Inventario', 'Catálogo completo de equipos con su estado actual.'],
+      ['Pendientes', 'Gestiones por resolver, con columnas para actualizar.'],
+      ['Ciclos correctivos', 'Fallas/correctivos con apertura y cierre.'],
+      ['Bitácora', 'Historial de eventos registrados.'],
+      [],
+      ['LEYENDA · ESTADOS DEL EQUIPO'],
+      ['Operativo', 'Funciona y está disponible.'],
+      ['No operativo', 'Fuera de servicio (falla / espera de repuestos).'],
+      ['En servicio técnico', 'Enviado a reparación externa.'],
+      ['Baja', 'Equipo dado de baja.'],
+      ['Desconocido', 'Sin información de estado.'],
+      [],
+      ['LEYENDA · RESULTADO DE LA MP'],
+      ['Si', 'Mantención preventiva realizada.'],
+      ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc + (CAUSALES[k].reprog30 ? ' — reprogramar dentro de 30 días.' : '')]),
+      ['FS', 'Equipo fuera de servicio.'],
+      ['NU', 'Equipo no ubicado.'],
+      ['Baja', 'Equipo dado de baja.'],
+      ['No', 'No realizada.'],
+      [],
+      ['LEYENDA · TIPOS DE PENDIENTE'],
+      ...Object.keys(TIPO_PENDIENTE).map(k => [TIPO_PENDIENTE[k], '']),
+      [],
+      ['LEYENDA · PROGRAMACIÓN (columna P)'],
+      ['X', 'Mantención programada en el mes.'],
+      ['R / RA', 'Reprogramada.'],
+      ['PM', 'Puesta en marcha / programada.']
     ];
-    addPlain(XLSX.utils.aoa_to_sheet(leeme), 'Léeme', [{ wch: 38 }, { wch: 82 }]);
+    const wsInicio = XLSX.utils.aoa_to_sheet(inicio);
+    wsInicio['!cols'] = [{ wch: 22 }, { wch: 72 }, { wch: 4 }, { wch: 14 }, { wch: 18 }];
+    wsInicio['!merges'] = [M(0, 0, 4), M(1, 0, 4)];
+    add(wsInicio, 'Inicio');
 
-    // 1. Por resolver
-    const prRows = [];
-    pendAb.slice().sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999')).forEach(p => prRows.push({
-      'Qué': 'Pendiente', 'Estado': ESTADO_PEND_LABEL[p.estado] || p.estado, 'N° Inv.': p.inv, 'Equipo': p.equipo || '', 'Servicio': p.servicio || '',
-      'Detalle': (TIPO_PENDIENTE[p.tipo] || p.tipo) + (p.desc ? (' — ' + p.desc) : ''), 'Ejecutor': p.ejecutor || '', 'Compromiso': fmtFecha(p.fechaComp), 'Hecho': ''
-    }));
-    ciclosAb.forEach(c => { const eq = H.findEquipo(c.inv); prRows.push({ 'Qué': 'Ciclo abierto', 'Estado': 'Abierto', 'N° Inv.': c.inv, 'Equipo': eq ? (eq.equipo || '') : '', 'Servicio': eq ? (eq.servicio || '') : '', 'Detalle': 'Folio ' + (c.folio || ''), 'Ejecutor': c.ingenieroAsignado || '', 'Compromiso': '', 'Hecho': '' }); });
-    borr.forEach(e => prRows.push({ 'Qué': 'Borrador', 'Estado': 'Por oficializar', 'N° Inv.': e.inv, 'Equipo': e.equipo || '', 'Servicio': e.servicio || '', 'Detalle': e.tipo + (e.obs ? (' — ' + e.obs) : ''), 'Ejecutor': e.ejecutor || '', 'Compromiso': fmtFecha(e.fecha), 'Hecho': '' }));
-    tabla(prRows, 'Por resolver', [{ wch: 12 }, { wch: 15 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 46 }, { wch: 20 }, { wch: 12 }, { wch: 8 }]);
+    // ===== 2) TABLERO =====
+    const servicios = [...new Set(S.equipos.map(e => e.servicio || '(sin servicio)'))].sort();
+    const svcRows = servicios.map(sv => {
+      const es = S.equipos.filter(e => (e.servicio || '(sin servicio)') === sv);
+      const prog = es.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]));
+      const ejec = prog.filter(e => H.mpDelMesEjecutada(e, YEAR, MONTH)).length;
+      const pend = es.reduce((a, e) => a + H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, 0);
+      return [sv, es.length, es.filter(e => e.estado === 'operativo').length, es.filter(e => e.estado === 'no_operativo').length,
+        es.filter(e => e.estado === 'en_servicio_tecnico').length, prog.length ? (ejec + '/' + prog.length) : '—',
+        prog.length ? Math.round(ejec / prog.length * 100) + '%' : '—', pend];
+    });
+    const tablero = [
+      ['Tablero de indicadores · ' + periodo], [],
+      ['INDICADOR', 'VALOR'],
+      ['Equipos en catálogo', S.equipos.length],
+      ['  · Operativos', op.length],
+      ['  · No operativos', noOp.length],
+      ['  · En servicio técnico', enST.length],
+      ['  · Baja', baja.length],
+      ['Alertas (fuera de servicio > 30 días)', alerta30.length],
+      ['MP programadas del mes', mpProg.length],
+      ['  · Ejecutadas', mpEjec.length],
+      ['  · Pendientes', mpPendL.length],
+      ['  · % cumplido', pct + '%'],
+      ['MP atrasadas (meses previos)', mpAtras.length],
+      ['Pendientes abiertos', pendAb.length],
+      ['  · Vencidos', pendVenc.length],
+      ['Ciclos correctivos abiertos', ciclosAb.length],
+      ['Eventos en borrador (sin oficializar)', borr.length]
+    ];
+    const wsTab = XLSX.utils.aoa_to_sheet(tablero);
+    wsTab['!cols'] = [{ wch: 40 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 16 }, { wch: 7 }, { wch: 13 }];
+    wsTab['!merges'] = [M(0, 0, 1)];
+    XLSX.utils.sheet_add_aoa(wsTab, [[], ['ESTADO POR SERVICIO'],
+      ['Servicio', 'Equipos', 'Operativos', 'No oper.', 'Serv. téc.', 'MP mes (ej/prog)', '% MP', 'Pend. abiertos'],
+      ...svcRows], { origin: -1 });
+    add(wsTab, 'Tablero');
 
-    // 2. Eventos
-    tabla(evMios.map(mapEv), 'Eventos', colsEv);
+    // ===== 3) HOJA DE RUTA MP (imprimible, columnas en blanco) =====
+    const keyMes = `${year}-${String(MONTH + 1).padStart(2, '0')}`;
+    const asig = (S.asignacionesMP || {})[keyMes] || {};
+    const rutaHeader = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Freq', 'Responsable asignado', 'Prog.', 'Realizada ✎', 'Fecha ✎', 'Estado resultante ✎', 'Firma ✎', 'Observación ✎'];
+    const rutaRows = mpProg.slice().sort((a, b) => (a.servicio || '').localeCompare(b.servicio || '')).map(e => [
+      e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.freq || '', asig[e.inv] || '', (e.prog || {})[MESES[MONTH]] || '', '', '', '', '', ''
+    ]);
+    add(tableSheet('Hoja de ruta MP · ' + periodo, 'Imprime esta hoja y registra cada MP a medida que la ejecutas. Códigos de "Realizada" en la hoja Inicio.', rutaHeader, rutaRows,
+      [{ wch: 13 }, { wch: 24 }, { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 11 }, { wch: 24 }, { wch: 7 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 14 }, { wch: 34 }]), 'Hoja de ruta MP');
 
-    // 3. Equipos
-    tabla(S.equipos.map(e => ({
-      'N° Inv.': e.inv, 'N° Carpeta': e.carpeta || '', 'Serie': e.serie || '', 'Familia': e.fam || '', 'Equipo': e.equipo || '', 'Marca': e.marca || '', 'Modelo': e.modelo || '',
-      'Servicio': e.servicio || '', 'Unidad': e.unidad || '', 'Ubicación': e.ubic || '', 'Procedencia': e.proc || '', 'Año': e.ano || '', 'VUR': e.vur || '', 'Clasificación': e.clasif || '', 'Frecuencia MP': e.freq || '',
-      'Estado': ESTADO_LABEL[e.estado] || e.estado, 'Días en estado': H.diasEnEstado(e), 'Pendientes abiertos': H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, 'Ciclo abierto': H.ciclosAbiertosDe(e.inv).length > 0 ? 'Sí' : 'No'
-    })), 'Equipos', [{ wch: 13 }, { wch: 9 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 12 }, { wch: 13 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 11 }]);
+    // ===== 4) PLAN ANUAL MP (P/R por mes) =====
+    const planTop = ['', '', '', '', '']; MESES.forEach(m => planTop.push(m, ''));
+    const planHd = ['N° Inv.', 'Equipo', 'Servicio', 'Freq', 'Responsable']; MESES.forEach(() => planHd.push('P', 'R'));
+    const planRows = S.equipos.map(e => {
+      const row = [e.inv, e.equipo || '', e.servicio || '', e.freq || '', H.encargadoDe(e) || ''];
+      MESES.forEach(m => { const reg = (e.registro || {})[m] || {}; row.push((reg.P || (e.prog || {})[m] || ''), (reg.R || '')); });
+      return row;
+    });
+    const wsPlan = XLSX.utils.aoa_to_sheet([['Plan anual de mantención preventiva · ' + year], planTop, planHd, ...planRows]);
+    wsPlan['!cols'] = [{ wch: 13 }, { wch: 24 }, { wch: 20 }, { wch: 10 }, { wch: 22 }, ...Array(24).fill({ wch: 4 })];
+    const merges = [M(0, 0, 28)]; MESES.forEach((m, i) => merges.push(M(1, 5 + i * 2, 5 + i * 2 + 1)));
+    wsPlan['!merges'] = merges;
+    wsPlan['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 2, c: 0 }, e: { r: 2 + planRows.length, c: planHd.length - 1 } }) };
+    add(wsPlan, `Plan anual MP ${year}`);
 
-    // 4. PMP_AAAA — espejo del maestro
-    const pmpHeader = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Clasificación', 'ENU / Baja', 'Observación', 'Frecuencia MP', 'Responsable MP', ...MESES];
-    const pmpData = [pmpHeader];
-    S.equipos.forEach((e, i) => { const row = [e.fam || '', i + 1, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.enu || '', '', e.freq || '', '']; MESES.forEach(m => row.push((e.prog || {})[m] || '')); pmpData.push(row); });
-    addPlain(XLSX.utils.aoa_to_sheet(pmpData), `PMP_${year}`);
+    // ===== 5) INVENTARIO =====
+    const invHeader = ['N° Inv.', 'Carpeta', 'Serie', 'Familia', 'Equipo', 'Marca', 'Modelo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Año', 'VUR', 'Clasificación', 'Freq MP', 'Estado', 'Días en estado', 'Pend. abiertos', 'Ciclo abierto', 'Encargado'];
+    const invRows = S.equipos.map(e => [e.inv, e.carpeta || '', e.serie || '', e.fam || '', e.equipo || '', e.marca || '', e.modelo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.ano || '', e.vur || '', e.clasif || '', e.freq || '', ESTADO_LABEL[e.estado] || e.estado, H.diasEnEstado(e), H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, H.ciclosAbiertosDe(e.inv).length ? 'Sí' : 'No', H.encargadoDe(e) || '']);
+    add(tableSheet('Inventario de equipos', 'Catálogo completo al ' + hoy + '.', invHeader, invRows,
+      [{ wch: 13 }, { wch: 8 }, { wch: 15 }, { wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 5 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 20 }]), 'Inventario');
 
-    // 5. Registro_MP-AAAA — P y R por mes
-    const regHeader2 = Array(19).fill(''); MESES.forEach(() => regHeader2.push('P', 'R'));
-    const regHeaderMonths = Array(19).fill(''); MESES.forEach(m => regHeaderMonths.push(m, '')); regHeaderMonths[3] = 'N° Inventario';
-    const regData = [regHeaderMonths, regHeader2];
-    S.equipos.forEach((e, i) => { const row = ['', i + 1, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.enu || '', '', e.freq || '', '']; MESES.forEach(m => { const reg = (e.registro || {})[m] || {}; const prog = (e.prog || {})[m] || ''; row.push(reg.P || prog || '', reg.R || ''); }); regData.push(row); });
-    addPlain(XLSX.utils.aoa_to_sheet(regData), `Registro_MP-${year}`);
+    // ===== 6) PENDIENTES (con columnas para actualizar offline) =====
+    const pHeader = ['ID', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Creado', 'Compromiso', 'Estado actual', 'Avance ✎', 'Nuevo estado ✎', 'Fecha ✎'];
+    const pRows = S.pendientes.filter(p => !p.anulado).sort((a, b) => (a.estado === 'cerrado' ? 1 : 0) - (b.estado === 'cerrado' ? 1 : 0) || (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999')).map(p => [p.id, p.inv, p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', fmtFecha(p.fechaCrea), fmtFecha(p.fechaComp), ESTADO_PEND_LABEL[p.estado] || p.estado, '', '', '']);
+    add(tableSheet('Pendientes', 'Completa las columnas (✎) para hacer seguimiento sin la aplicación.', pHeader, pRows,
+      [{ wch: 5 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 44 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 30 }, { wch: 14 }, { wch: 11 }]), 'Pendientes');
 
-    // 6. Pendientes
-    tabla(S.pendientes.filter(p => !p.anulado).map(p => ({
-      'ID': p.id, 'N° Inv.': p.inv, 'Equipo': p.equipo || '', 'Servicio': p.servicio || '', 'Tipo': TIPO_PENDIENTE[p.tipo] || p.tipo, 'Descripción': p.desc || '', 'Ejecutor': p.ejecutor || '',
-      'Fecha creación': fmtFecha(p.fechaCrea), 'Fecha compromiso': fmtFecha(p.fechaComp), 'Fecha cierre': fmtFecha(p.fechaCierre), 'Estado': ESTADO_PEND_LABEL[p.estado] || p.estado, 'Origen': p.origen || ''
-    })), 'Pendientes', [{ wch: 5 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 15 }, { wch: 13 }, { wch: 13 }, { wch: 14 }]);
+    // ===== 7) CICLOS CORRECTIVOS =====
+    const cHeader = ['Folio SIGEM', 'N° Inv.', 'Equipo', 'Estado', 'Apertura', 'Cierre', 'Ingeniero', 'Descripción inicial'];
+    const cRows = S.ciclos.slice().sort((a, b) => (a.estado === 'abierto' ? 0 : 1) - (b.estado === 'abierto' ? 0 : 1)).map(c => { const eq = H.findEquipo(c.inv) || {}; return [c.folio, c.inv, eq.equipo || '', c.estado, fmtFecha(c.fechaApertura), fmtFecha(c.fechaCierre), c.ingenieroAsignado || '', c.descripcionInicial || '']; });
+    add(tableSheet('Ciclos correctivos', null, cHeader, cRows,
+      [{ wch: 24 }, { wch: 13 }, { wch: 22 }, { wch: 11 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 46 }]), 'Ciclos correctivos');
 
-    // 7. Conflictos
-    if (S.conflictos && S.conflictos.length) tabla(S.conflictos.map(c => ({
-      'ID': c.id, 'Tipo': c.tipo, 'N° Inv.': c.inv, 'Estado': c.estado, 'Hoja': c.hoja || '', 'Mes': c.mes || '', 'Campo': c.campo || '', 'Valor programa': c.valorPrograma || '', 'Valor maestro': c.valorMaestro || '',
-      'Detectado': c.fechaDeteccion ? fmtFecha(c.fechaDeteccion.slice(0, 10)) : '', 'Resuelto': c.fechaResolucion ? fmtFecha(c.fechaResolucion.slice(0, 10)) : '', 'Acción aplicada': c.accionAplicada || '', 'Valor final': c.resolucionValor || ''
-    })), 'Conflictos', [{ wch: 5 }, { wch: 14 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 6 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }]);
+    // ===== 8) BITÁCORA (historial de eventos) =====
+    const bHeader = ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Origen', 'Observación'];
+    const bRows = S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', e.servicio || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', H.eventoEsAuto(e) ? 'Automático' : 'Manual', e.obs || '']);
+    add(tableSheet('Bitácora de eventos', null, bHeader, bRows,
+      [{ wch: 12 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 11 }, { wch: 44 }]), 'Bitácora');
 
-    // 8. Ciclos correctivos
-    if (S.ciclos && S.ciclos.length) tabla(S.ciclos.map(c => ({
-      'Folio SIGEM': c.folio, 'N° Inv.': c.inv, 'Estado': c.estado, 'Apertura': fmtFecha(c.fechaApertura), 'Cierre': fmtFecha(c.fechaCierre), 'Ingeniero asignado': c.ingenieroAsignado || '', 'Descripción inicial': c.descripcionInicial || ''
-    })), 'Ciclos correctivos', [{ wch: 22 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 22 }, { wch: 46 }]);
-
-    // 9. Eventos automáticos (oculta)
-    if (evAuto.length) tabla(evAuto.map(mapEv), 'Eventos (automáticos)', colsEv);
-    wb.Workbook = { Sheets: wb.SheetNames.map(n => n === 'Eventos (automáticos)' ? { Hidden: 1 } : {}) };
-
-    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `SIGEM_${hoy}.xlsx`);
-    const vis = wb.SheetNames.length - (evAuto.length ? 1 : 0);
-    toast(`Excel exportado · ${vis} hoja(s)` + (evAuto.length ? ' + 1 oculta' : ''), 'success');
+    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `SIGEM_cuaderno_${hoy}.xlsx`);
+    toast(`Excel exportado · ${wb.SheetNames.length} hojas`, 'success');
   }
   function descargarPlantilla(y, m) {
     if (!window.XLSX) return toast('XLSX no disponible', 'error');
