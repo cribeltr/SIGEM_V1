@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b9';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b10';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -506,7 +506,7 @@
     const cs = H.ciclosDe(eq.inv);
     return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclos correctivos')),
       h('div', { class: 's-bd flush' }, cs.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Folio'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
+        h('thead', {}, h('tr', {}, h('th', {}, 'N° Informe / Folio'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
         h('tbody', {}, ...cs.map(c => h('tr', {}, h('td', { class: 'mono' }, c.folio || '—'), h('td', {}, fmtFecha(c.fechaApertura)), h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
           h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')))))) : h('div', { class: 'empty' }, 'Sin ciclos')));
   }
@@ -718,7 +718,7 @@
       list = cf.apply(list);
       mount(wrap, S.ciclos.length ? h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
-          cf.thF('folio', 'Folio', c => c.folio || '—'), cf.thF('inv', 'N° Inv.', c => c.inv), cf.thF('equipo', 'Equipo', eqName),
+          cf.thF('folio', 'N° Informe / Folio', c => c.folio || '—'), cf.thF('inv', 'N° Inv.', c => c.inv), cf.thF('equipo', 'Equipo', eqName),
           cf.thF('apertura', 'Apertura', c => fmtFecha(c.fechaApertura)), cf.thF('cierre', 'Cierre', c => c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
           cf.thF('estadoC', 'Estado', c => c.estado), cf.thF('ing', 'Ingeniero', c => c.ingenieroAsignado || '—'))),
         h('tbody', {}, ...list.map(c => { const eq = H.findEquipo(c.inv) || {}; return h('tr', { onclick: () => go('equipo', { inv: c.inv, tab: 'ciclos' }) },
@@ -767,7 +767,7 @@
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.dup ? true : false, onchange: e => { f.dup = e.target.checked; render(); } }), 'Solo duplicadas'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `SIGEM_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
+        h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `SIGEM_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
       wrap);
     render(); return root;
@@ -780,7 +780,7 @@
         TH('fecha', 'Fecha', e => fmtFecha(e.fecha)), !compact ? TH('inv', 'N° Inv.', e => e.inv) : null,
         TH('tipo', 'Tipo', e => H.etiquetaTipoEvento(e)), TH('res', 'Resultado', e => e.resultado || '—'),
         TH('estadoE', 'Estado', e => e.estado || '—'), TH('ejec', 'Ejecutor', e => e.ejecutor || '—'),
-        TH('folio', 'Folio', e => e.folio || '—'), TH('obs', 'Observación', e => e.obs || '—'),
+        TH('folio', 'N° Informe / Folio', e => e.folio || '—'), TH('obs', 'Observación', e => e.obs || '—'),
         TH('oficial', 'Oficial', e => e.oficial === 'Sí' ? 'Oficial' : 'Borrador'), h('th', { class: 'shrink' }, ''))),
       h('tbody', {}, ...list.map(e => h('tr', { class: e.anulado ? '' : '', style: e.anulado ? { opacity: .5 } : null },
         h('td', {}, fmtFecha(e.fecha)),
@@ -1131,13 +1131,13 @@
       const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], '');
       const oficial = selectEl([['No', 'Borrador'], ['Sí', 'Oficial']], 'No');
       const obs = h('textarea', { placeholder: 'Observación / informe…' });
-      function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio || '', c.folio || '(sin folio)']), ['', '— sin vincular —']], ciclosAb[0].folio || '') : h('input', { type: 'text', placeholder: 'Folio SIGEM' }); }
-      if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'Folio SIGEM (opcional)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Folio SIGEM', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
-      else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('Folio SIGEM', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
-      else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Oficial', oficial)), field('Observación', obs)); }
-      else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Folio SIGEM', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
-      else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('Folio SIGEM', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }
-      else if (tipo === 'Reparación') { const folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'), repuestos = h('input', { type: 'text', placeholder: 'Repuestos' }); ctrls = { folio, estado, repuestos }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Folio SIGEM', folio), field('Estado', estado)), field('Repuestos', repuestos), field('Descripción', obs), field('Oficial', oficial)); }
+      function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio || '', c.folio || '(sin folio)']), ['', '— sin vincular —']], ciclosAb[0].folio || '') : h('input', { type: 'text', placeholder: 'N° Informe / Folio' }); }
+      if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'N° Informe / Folio (opcional)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('N° Informe / Folio', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
+      else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('N° Informe / Folio', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Oficial', oficial)), field('Observación', obs)); }
+      else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('N° Informe / Folio', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
+      else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Reparación') { const folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'), repuestos = h('input', { type: 'text', placeholder: 'Repuestos' }); ctrls = { folio, estado, repuestos }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Informe / Folio', folio), field('Estado', estado)), field('Repuestos', repuestos), field('Descripción', obs), field('Oficial', oficial)); }
       else if (tipo === 'Mantención preventiva') { const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], 'Si'), mpEstado = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo'), ejec2 = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], ''); ctrls = { resultado, _mpEstado: mpEstado, ejecutor2: ejec2 }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado (si "Si")', mpEstado)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Ejecutor 2', ejec2)), field('Observación', obs), field('Oficial', oficial), h('div', { class: 'notice' }, 'C1–C8 → pendiente de reprogramación · NU → "Localizar equipo" · Baja → equipo a baja.')); }
 
       const guardar = () => {
@@ -1515,7 +1515,7 @@
     // Bitácora
     sheets.push({
       name: 'Bitácora', hidden: false, rows: [
-        ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'],
+        ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'],
         ...S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fF(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || ''])
       ]
     });
@@ -1792,13 +1792,13 @@
       [{ wch: 5 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 44 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 30 }, { wch: 14 }, { wch: 11 }]), 'Pendientes');
 
     // ===== 7) CICLOS CORRECTIVOS =====
-    const cHeader = ['Folio SIGEM', 'N° Inv.', 'Equipo', 'Estado', 'Apertura', 'Cierre', 'Ingeniero', 'Descripción inicial'];
+    const cHeader = ['N° Informe / Folio', 'N° Inv.', 'Equipo', 'Estado', 'Apertura', 'Cierre', 'Ingeniero', 'Descripción inicial'];
     const cRows = S.ciclos.slice().sort((a, b) => (a.estado === 'abierto' ? 0 : 1) - (b.estado === 'abierto' ? 0 : 1)).map(c => { const eq = H.findEquipo(c.inv) || {}; return [c.folio, c.inv, eq.equipo || '', c.estado, fmtFecha(c.fechaApertura), fmtFecha(c.fechaCierre), c.ingenieroAsignado || '', c.descripcionInicial || '']; });
     add(tableSheet('Ciclos correctivos', null, cHeader, cRows,
       [{ wch: 24 }, { wch: 13 }, { wch: 22 }, { wch: 11 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 46 }]), 'Ciclos correctivos');
 
     // ===== 8) BITÁCORA (historial de eventos) =====
-    const bHeader = ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'Folio', 'Oficial', 'Observación'];
+    const bHeader = ['Fecha', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'];
     const bRows = S.eventos.filter(e => !e.anulado && !H.eventoEsAuto(e)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', e.servicio || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']);
     add(tableSheet('Bitácora de eventos', null, bHeader, bRows,
       [{ wch: 12 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 44 }]), 'Bitácora');

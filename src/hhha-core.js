@@ -1236,6 +1236,8 @@
     if (d.ejecutor2 != null) ev.ejecutor2 = d.ejecutor2 || null;
     // MP: con "Si" el estado lo eligió el usuario; con causal se deriva.
     if (d.tipo === 'Mantención preventiva') ev.estado = estadoMPFinal(ev.resultado, d.mpEstadoSi || 'operativo');
+    // Solicitud de trabajo: abre ciclo correctivo y deja el equipo "no operativo".
+    else if (d.tipo === 'Solicitud de trabajo') ev.estado = 'no operativo';
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
     audit('evento', ev.id, 'creado', null, d.tipo);
@@ -1596,7 +1598,7 @@
       'ID': e.id, 'Fecha del evento': fmtFecha(e.fecha), 'Fecha registro': fmtFecha(e.fechaReg),
       'N° Inv.': e.inv, 'Equipo': e.equipo || '', 'Servicio': e.servicio || '',
       'Tipo': e.tipo, 'Resultado': e.resultado || '', 'Estado equipo': e.estado || '',
-      'Ejecutor': e.ejecutor || '', 'Folio SIGEM': e.folio || '',
+      'Ejecutor': e.ejecutor || '', 'N° Informe / Folio': e.folio || '',
       'N° Envío': e.nEnvio || '', 'N° OC': e.nOC || '', 'N° Cotización': e.nCotiz || '',
       'Empresa': e.empresa || '', 'Técnico': e.tecnico || '',
       'Observación': e.obs || '', 'Oficial': e.oficial || 'No', 'Creado por': e.creadoPor || ''
