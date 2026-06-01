@@ -2229,6 +2229,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const conf = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
     const ciclosAb = S.ciclos.filter(c => c.estado === 'abierto');
     const borradores = S.eventos.filter(e => e.oficial !== 'Sí' && !e.anulado);
+    const pendSinAsig = pendAct.filter(p => !p.ejecutor).length;
 
     // MP del mes (programadas / ejecutadas / pendientes) + atrasadas de meses previos
     const mpProg = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]));
@@ -2245,7 +2246,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       alert('hi', noop.length, 'No operativos', () => go('equipos', { estado: 'no_operativo' }), 'fuera de servicio'),
       alert('med', st.length, 'En servicio técnico', () => go('equipos', { estado: 'en_servicio_tecnico' }), 'fuera del hospital'),
       alert('hi', alerta30.length, 'Alertas >30 días', () => go('equipos', { alerta30: 1 }), 'sin avance +30d'),
-      alert(vencidos.length ? 'hi' : 'med', pendAct.length, 'Pendientes', () => go('pendientes'), vencidos.length + ' vencidos'),
+      alert(vencidos.length ? 'hi' : 'med', pendAct.length, 'Pendientes', () => go('pendientes'), vencidos.length + ' vencidos · ' + pendSinAsig + ' sin asignar'),
       alert(pct >= 100 ? 'lo' : pct >= 50 ? 'med' : 'hi', pct + '%', 'MP del mes', () => go('asignaciones'), mpEjec.length + '/' + mpProg.length + ' ejecutadas'),
       alert('hi', mpAtras.length, 'MP atrasadas', () => go('equipos', { mpAtras: 1 }), 'meses previos'),
       alert('lo', ciclosAb.length, 'Ciclos abiertos', () => go('ciclos', { estado: 'abierto' }), 'correctivos en curso'),
@@ -2313,32 +2314,31 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
 
   // ---- EQUIPOS ------------------------------------------------------------
-  let eqSel = new Set();
   VIEWS.equipos = function () {
     const S = H.getState();
-    let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '' };
+    let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false };
     let sortKey = 'inv', sortDir = 1;
-    eqSel = new Set();
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
     const familias = [...new Set(S.equipos.map(e => e.fam).filter(Boolean))].sort();
 
     const tblWrap = h('div', { class: 'tbl-wrap' });
     const countNote = h('span', { class: 'count-note' });
-    const bulkBtn = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formMPMasiva([...eqSel]) }, svg(ic.plus, 14), 'Registrar MP');
 
     function data() {
       let list = S.equipos.slice();
       if (f.estado !== 'todos') list = list.filter(e => e.estado === f.estado);
       if (f.servicio) list = list.filter(e => e.servicio === f.servicio);
       if (f.fam) list = list.filter(e => e.fam === f.fam);
+      if (f.sinEnc) list = list.filter(e => e.estado !== 'baja' && !H.encargadoDe(e));
       if (params.alerta30) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
       if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
       list.sort((a, b) => {
         let va, vb;
         if (sortKey === 'mp') { va = H.mpEstadoMes(a, YEAR, MONTH); vb = H.mpEstadoMes(b, YEAR, MONTH); }
+        else if (sortKey === 'pend') { va = H.pendientesDe(a.inv).filter(p => p.estado !== 'cerrado').length; vb = H.pendientesDe(b.inv).filter(p => p.estado !== 'cerrado').length; }
         else { va = (a[sortKey] || ''); vb = (b[sortKey] || ''); }
-        return String(va).localeCompare(String(vb), 'es', { numeric: true }) * sortDir;
+        return (typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'es', { numeric: true })) * sortDir;
       });
       return list;
     }
@@ -2347,26 +2347,19 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
       const th = (key, lbl, cls) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
         lbl, sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null);
-      const allChk = h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(x => eqSel.add(x.inv)); else eqSel.clear(); render(); } });
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
-          h('th', { class: 'shrink' }, allChk), th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
-          th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'), h('th', { class: 'num' }, 'Pend.'))),
-        h('tbody', {}, ...list.map(e => {
-          const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); updBulk(); tr.classList.toggle('sel', ev.target.checked); } });
-          const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
-            h('td', { onclick: ev => ev.stopPropagation() }, chk),
-            h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
-            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
-            h('td', {}, mpMesBadge(e)), h('td', { class: 'muted' }, H.encargadoDe(e) || '—'),
-            h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
-          return tr;
-        }))
+          th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
+          th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'), th('pend', 'Pend.', 'num'))),
+        h('tbody', {}, ...list.map(e => h('tr', { onclick: () => go('equipo', { inv: e.inv }) },
+          h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
+          h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
+          h('td', {}, mpMesBadge(e)),
+          h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, H.encargadoDe(e) || 'sin asignar'),
+          h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()))))
       ));
       kbList = { rows: list.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
-      updBulk();
     }
-    function updBulk() { bulkBtn.style.display = eqSel.size ? '' : 'none'; if (eqSel.size) bulkBtn.lastChild.textContent = `Registrar MP (${eqSel.size})`; }
 
     const qInput = h('input', { type: 'search', placeholder: 'Buscar inv, equipo, serie, marca…', value: f.q, oninput: e => { f.q = e.target.value; render(); } });
     const seg = h('div', { class: 'seg' }, ...[['todos', 'Todos'], ['operativo', 'Operativos'], ['no_operativo', 'No oper.'], ['en_servicio_tecnico', 'Serv. téc.'], ['baja', 'Baja']].map(([v, l]) =>
@@ -2379,7 +2372,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('div', { class: 'filterbar' }, qInput, seg,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
         field(null, selectEl([['', 'Toda familia'], ...familias.map(s => [s, s])], f.fam, { onchange: e => { f.fam = e.target.value; render(); } })),
-        incomingChip, bulkBtn, countNote),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.sinEnc = e.target.checked; render(); } }), 'Sin encargado'),
+        incomingChip, countNote),
       tblWrap);
     render();
     return root;
@@ -2503,22 +2497,61 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
 
   // ---- PENDIENTES ---------------------------------------------------------
+  let pendSel = new Set();
   VIEWS.pendientes = function () {
     const S = H.getState();
-    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: '', q: '', serv: '' };
+    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: '', q: '', serv: '', ejec: params.ejec || '' };
+    pendSel = new Set();
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
-    function data() {
+    const cargaBox = h('div', {}); const bulkBar = h('div', { class: 'filterbar', style: { display: 'none', background: 'var(--accent-bg)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' } });
+
+    // Conjunto base (estado/vencidos/tipo/servicio) sin el filtro de responsable — para la carga.
+    function base() {
       let list = S.pendientes.filter(p => !p.anulado);
       if (f.estado === 'activos') list = list.filter(p => p.estado !== 'cerrado');
       else if (f.estado !== 'todos') list = list.filter(p => p.estado === f.estado);
       if (params.vencidos) list = list.filter(p => p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado');
       if (f.tipo) list = list.filter(p => p.tipo === f.tipo);
       if (f.serv) list = list.filter(p => p.servicio === f.serv);
+      return list;
+    }
+    function data() {
+      let list = base();
+      if (f.ejec === '__none') list = list.filter(p => !p.ejecutor);
+      else if (f.ejec) list = list.filter(p => p.ejecutor === f.ejec);
       if (f.q) { const q = norm(f.q); list = list.filter(p => norm(`${p.inv} ${p.equipo} ${p.desc} ${p.ejecutor}`).includes(q)); }
       return list.sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
     }
-    function render() { const list = data(); note.textContent = `${list.length} pendiente${list.length !== 1 ? 's' : ''}`; mount(wrap, list.length ? pendientesTable(list) : h('div', { class: 'empty' }, 'Sin resultados')); kbList = { rows: list.map(p => p.id), open: id => formPendiente(S.pendientes.find(p => p.id === id)), idx: -1 }; }
+    function renderCarga() {
+      const set = base(); const counts = {}; let sin = 0;
+      set.forEach(p => { if (p.ejecutor) counts[p.ejecutor] = (counts[p.ejecutor] || 0) + 1; else sin++; });
+      const chip = (lbl, n, key, alarm) => h('span', { class: 'chip', style: { cursor: 'pointer', ...(f.ejec === key ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}) }, onclick: () => { f.ejec = f.ejec === key ? '' : key; render(); } }, lbl, ' ', h('b', { style: alarm ? { color: 'var(--st)' } : null }, n));
+      const items = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([ej, n]) => chip(ej, n, ej));
+      mount(cargaBox, h('div', { class: 'section', style: { marginBottom: '10px' } },
+        h('div', { class: 's-hd' }, h('h3', {}, 'Carga por responsable'), h('span', { class: 's-sub' }, set.length + ' pendiente(s)')),
+        h('div', { class: 's-bd', style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+          sin ? chip('Sin asignar', sin, '__none', true) : null, ...items, (items.length || sin) ? null : h('span', { class: 'faint' }, 'Sin pendientes'))));
+    }
+    function updBulk() {
+      const n = pendSel.size; bulkBar.style.display = n ? '' : 'none'; if (!n) return;
+      const sel = () => [...pendSel].map(id => S.pendientes.find(p => p.id === id)).filter(Boolean);
+      mount(bulkBar,
+        h('b', {}, `${n} seleccionado${n !== 1 ? 's' : ''}`),
+        selectEl([['', 'Asignar responsable…'], ...EJECUTORES.map(x => [x, x]), ['__none', '— quitar responsable —']], '', { onchange: e => { const v = e.target.value; if (!v) return; const val = v === '__none' ? null : v; sel().forEach(p => { const o = p.ejecutor || null; p.ejecutor = val; H.audit('pendiente', p.id, 'ejecutor', o, val); }); H.save(); toast(`Responsable actualizado · ${n}`, 'success'); pendSel.clear(); render(); } }),
+        h('button', { class: 'btn sm', onclick: () => { sel().forEach(p => { if (p.estado === 'no_iniciado') { p.estado = 'en_proceso'; H.audit('pendiente', p.id, 'estado', 'no_iniciado', 'en_proceso'); } }); H.save(); toast('Marcados en proceso', 'success'); pendSel.clear(); render(); } }, 'Marcar en proceso'),
+        h('button', { class: 'btn sm', onclick: () => { if (!window.confirm(`¿Resolver ${n} pendiente(s)?`)) return; sel().forEach(p => { if (p.estado !== 'cerrado') { p.estado = 'cerrado'; if (!p.fechaCierre) p.fechaCierre = H.hoyLocal(); H.audit('pendiente', p.id, 'estado', 'abierto', 'cerrado'); } }); H.save(); toast('Resueltos', 'success'); pendSel.clear(); render(); } }, 'Resolver'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm ghost', onclick: () => { pendSel.clear(); render(); } }, 'Limpiar selección'));
+    }
+    function render() {
+      renderCarga();
+      const list = data();
+      note.textContent = `${list.length} pendiente${list.length !== 1 ? 's' : ''}`;
+      mount(wrap, list.length ? pendientesTable(list, { sel: pendSel, onToggle: updBulk, onAll: render }) : h('div', { class: 'empty' }, 'Sin resultados'));
+      kbList = { rows: list.map(p => p.id), open: id => formPendiente(S.pendientes.find(p => p.id === id)), idx: -1 };
+      updBulk();
+    }
     const seg = h('div', { class: 'seg' }, ...[['activos', 'Activos'], ['no_iniciado', 'No iniciado'], ['en_proceso', 'En proceso'], ['cerrado', 'Resueltos'], ['todos', 'Todos']].map(([v, l]) =>
       h('button', { class: f.estado === v ? 'on' : '', onclick: e => { f.estado = v; params.vencidos = 0; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
     const root = h('div', {},
@@ -2526,17 +2559,28 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { f.q = e.target.value; render(); } }), seg,
         selectEl([['', 'Todo tipo'], ...Object.entries(TIPO_PENDIENTE)], f.tipo, { onchange: e => { f.tipo = e.target.value; render(); } }),
         selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.serv, { onchange: e => { f.serv = e.target.value; render(); } }),
+        selectEl([['', 'Todo responsable'], ['__none', 'Sin asignar'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: params.vencidos ? true : false, onchange: e => { params.vencidos = e.target.checked ? 1 : 0; render(); } }), 'Solo vencidos'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo'), note),
-      wrap);
+      cargaBox, bulkBar, wrap);
     render(); return root;
   };
-  function pendientesTable(list) {
+  function pendientesTable(list, opts) {
+    opts = opts || {}; const sel = opts.sel;
+    const headChk = sel ? h('th', { class: 'shrink' }, h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(p => sel.add(p.id)); else list.forEach(p => sel.delete(p.id)); opts.onAll && opts.onAll(); } })) : null;
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Tipo'), h('th', {}, 'Descripción'), h('th', {}, 'Estado'), h('th', {}, 'Ejecutor'), h('th', {}, 'Compromiso'))),
-      h('tbody', {}, ...list.map(p => h('tr', { onclick: () => formPendiente(p) },
-        h('td', { class: 'mono' }, p.inv), h('td', {}, p.equipo || '—'), h('td', { class: 'muted' }, TIPO_PENDIENTE[p.tipo] || p.tipo),
-        h('td', { class: 'wrap' }, (p.desc || '—')), h('td', {}, pendPill(p.estado)), h('td', { class: 'muted' }, p.ejecutor || '—'),
-        h('td', { class: p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado' ? '' : 'muted', style: p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado' ? { color: 'var(--noop)', fontWeight: 600 } : null }, p.fechaComp ? fmtFecha(p.fechaComp) : '—'))))));
+      h('thead', {}, h('tr', {}, headChk, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Tipo'), h('th', {}, 'Descripción'), h('th', {}, 'Estado'), h('th', {}, 'Responsable'), h('th', {}, 'Compromiso'))),
+      h('tbody', {}, ...list.map(p => {
+        const venc = p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado';
+        const chk = sel ? h('td', { onclick: ev => ev.stopPropagation() }, h('input', { type: 'checkbox', checked: sel.has(p.id) ? true : false, onchange: ev => { ev.target.checked ? sel.add(p.id) : sel.delete(p.id); tr.classList.toggle('sel', ev.target.checked); opts.onToggle && opts.onToggle(); } })) : null;
+        const tr = h('tr', { class: sel && sel.has(p.id) ? 'sel' : '', onclick: () => formPendiente(p) },
+          chk,
+          h('td', { class: 'mono' }, p.inv), h('td', {}, p.equipo || '—'), h('td', { class: 'muted' }, TIPO_PENDIENTE[p.tipo] || p.tipo),
+          h('td', { class: 'wrap' }, (p.desc || '—')), h('td', {}, pendPill(p.estado)),
+          h('td', { class: p.ejecutor ? 'muted' : '', style: p.ejecutor ? null : { color: 'var(--st)' } }, p.ejecutor || 'sin asignar'),
+          h('td', { class: venc ? '' : 'muted', style: venc ? { color: 'var(--noop)', fontWeight: 600 } : null }, p.fechaComp ? fmtFecha(p.fechaComp) : '—'));
+        return tr;
+      }))));
   }
 
   // ---- CICLOS -------------------------------------------------------------
@@ -2562,7 +2606,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // ---- EVENTOS (bitácora global) ------------------------------------------
   VIEWS.eventos = function () {
     const S = H.getState();
-    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false };
+    let f = { tipo: '', oficial: params.oficial === 'No' ? 'no' : params.oficial === 'Sí' ? 'si' : '', q: '', anulados: false, ejec: params.ejec || '' };
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
     const tipos = [...new Set(S.eventos.map(e => e.tipo))];
     function data() {
@@ -2570,6 +2614,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (!f.anulados) list = list.filter(e => !e.anulado);
       if (f.tipo) list = list.filter(e => e.tipo === f.tipo);
       if (f.oficial) list = list.filter(e => (e.oficial === 'Sí') === (f.oficial === 'si'));
+      if (f.ejec) list = list.filter(e => (f.ejec === '__none' ? !e.ejecutor : e.ejecutor === f.ejec));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.ejecutor} ${e.folio} ${e.obs}`).includes(q)); }
       return list.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 600);
     }
@@ -2579,6 +2624,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('input', { type: 'search', placeholder: 'Buscar inv, ejecutor, folio…', oninput: e => { f.q = e.target.value; render(); } }),
         selectEl([['', 'Todo tipo'], ...tipos.map(t => [t, t])], '', { onchange: e => { f.tipo = e.target.value; render(); } }),
         selectEl([['', 'Oficial: todos'], ['si', 'Sólo oficiales'], ['no', 'Sólo borradores']], f.oficial, { onchange: e => { f.oficial = e.target.value; render(); } }),
+        selectEl([['', 'Todo ejecutor'], ['__none', 'Sin ejecutor'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
       wrap);
@@ -2618,9 +2664,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     mpSel = new Set();
     const keyMes = () => `${y}-${String(m + 1).padStart(2, '0')}`;
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
-    const bulkMP = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formMPMasiva([...mpSel]) }, svg(ic.plus, 14), 'Registrar MP');
-    const bulkAsig = h('button', { class: 'btn sm', style: { display: 'none' }, onclick: () => formAsignarEjecutor([...mpSel], keyMes()) }, 'Asignar ejecutor');
-    function updBulk() { const on = mpSel.size; bulkMP.style.display = on ? '' : 'none'; bulkAsig.style.display = on ? '' : 'none'; if (on) { bulkMP.lastChild.textContent = `Registrar MP (${on})`; bulkAsig.textContent = `Asignar ejecutor (${on})`; } }
+    const bulkAsig = h('button', { class: 'btn sm primary', style: { display: 'none' }, onclick: () => formAsignarEjecutor([...mpSel], keyMes()) }, 'Asignar ejecutor');
+    function updBulk() { const on = mpSel.size; bulkAsig.style.display = on ? '' : 'none'; if (on) { bulkAsig.textContent = `Asignar ejecutor (${on})`; } }
     function data() {
       const asig = (S.asignacionesMP || {})[keyMes()] || {};
       let list = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[m]));
@@ -2662,7 +2707,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         seg,
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: sinAsig ? true : false, onchange: e => { sinAsig = e.target.checked; mpSel.clear(); render(); } }), 'Sin asignar'),
         h('div', { class: 'tb-spacer' }),
-        bulkMP, bulkAsig,
+        bulkAsig,
         h('button', { class: 'btn sm', onclick: () => descargarPlantilla(y, m) }, svg(ic.dl, 14), 'Plantilla'),
         h('button', { class: 'btn sm', onclick: () => subirPlantilla(y, m) }, svg(ic.up, 14), 'Subir'), note),
       wrap);
@@ -2746,30 +2791,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         field('Ejecutor', ejecutor), field('Observación', obs),
         h('div', { class: 'notice' }, 'Se guarda como borrador. Recuerda el último ejecutor/resultado para los próximos registros.')),
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: save }, 'Guardar MP')]
-    });
-  }
-  function formMPMasiva(invs) {
-    if (!invs.length) return toast('Selecciona equipos', 'error');
-    const fecha = h('input', { type: 'date', value: H.fechaSugeridaMP(YEAR, MONTH) });
-    const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], H.getPref('ultimoResultadoMP', 'Si'));
-    const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], H.getPref('ultimoEjecutor', ''));
-    const obs = h('textarea', { placeholder: 'Observación común (opcional)' });
-    const estadoSi = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo');
-    const omit = h('input', { type: 'checkbox', checked: true });
-    const save = () => {
-      const r = H.registrarMPMasiva({ invs, fecha: fecha.value, resultado: resultado.value, ejecutor: ejecutor.value, obs: obs.value, estadoSi: estadoSi.value, omitirDuplicados: omit.checked });
-      if (!r.ok) return toast(r.error, 'error');
-      let msg = `${r.creados} MP registradas`; if (r.omitidos) msg += ` · ${r.omitidos} omitidas`; if (r.errores.length) msg += ` · ${r.errores.length} errores`;
-      toast(msg, 'success'); closeDrawer();
-    };
-    openDrawer({
-      title: `MP masiva · ${invs.length} equipos`, wide: false, focus: 'select',
-      body: h('div', {}, h('div', { class: 'notice info' }, `Se registrará la misma MP a los ${invs.length} equipos seleccionados.`),
-        h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado (si "Si")', estadoSi)),
-        field('Ejecutor', ejecutor), field('Observación común', obs),
-        h('label', { class: 'checkbox' }, omit, 'Omitir equipos que ya tienen MP en el mes'),
-        h('div', { class: 'mini-row', style: { maxHeight: '160px', overflow: 'auto', display: 'block' } }, ...invs.slice(0, 40).map(i => { const e = H.findEquipo(i); return h('div', { class: 'faint', style: { fontSize: '11.5px', padding: '1px 0' } }, `${i} · ${e ? e.equipo : '?'}`); }), invs.length > 40 ? h('div', { class: 'faint' }, `… y ${invs.length - 40} más`) : null)),
-      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: save }, `Registrar a ${invs.length}`)]
     });
   }
   function formNuevoEvento(opts) {

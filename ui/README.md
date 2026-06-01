@@ -71,6 +71,24 @@ HHHA.bootstrapDatos();
 `UI.onChange` re-renderiza la vista actual tras cada `save()`, manteniendo la
 interfaz sincronizada con el estado.
 
+## Gestión (no solo registro)
+
+Funciones para gestionar, no solo registrar:
+
+- **Pendientes**: filtro por **responsable** (incluye **"Sin asignar"**), filtro
+  **"Solo vencidos"**, panel **"Carga por responsable"** (cuántos pendientes lleva
+  cada uno, clic para filtrar) y **acciones en lote** sobre la selección —
+  *asignar/quitar responsable*, *marcar en proceso* y *resolver*.
+- **Equipos**: filtro **"Sin encargado"** y la columna *Encargado* resalta los
+  equipos sin responsable.
+- **Eventos**: filtro por **ejecutor** (incluye "Sin ejecutor").
+- **Asignaciones MP**: selección múltiple para **asignar ejecutor** en lote.
+- **Inicio**: la tarjeta *Pendientes* muestra *vencidos* y *sin asignar*.
+
+> El registro de MP **en lote** (botones "MP masiva"/"Registrar MP" por selección)
+> fue retirado de la UI; la MP se registra de forma individual (botón **MP** en
+> línea, celda de la Matriz MP o **Nuevo evento**).
+
 ## Información incorporada desde SIGEM v1.0
 
 Verificado contra el build `index_69.html` (SIGEM v1.0). La lógica de negocio y el
