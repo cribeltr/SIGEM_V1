@@ -814,11 +814,23 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
   function ciclosAbiertosDe(inv) { return state.ciclos.filter(c => c.inv === inv && c.estado === 'abierto'); }
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
+    if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
     const c = ciclosAbiertosDe(equipo.inv)[0];
     if (c && c.ingenieroAsignado) return c.ingenieroAsignado;
     const evs = eventosDe(equipo.inv);
     for (let i = evs.length - 1; i >= 0; i--) { if (evs[i].ejecutor) return evs[i].ejecutor; }
     return null;
+  }
+  // Asigna (o quita) el responsable explícito de un equipo. No guarda (el llamador lo hace).
+  function asignarEncargado(equipo, persona) {
+    const antes = equipo.encargado || null;
+    equipo.encargado = persona || null;
+    audit('equipo', equipo.inv, 'encargado', antes, equipo.encargado);
+    return equipo;
+  }
+  // True si el equipo (no dado de baja) no tiene ningún mes con MP programada.
+  function sinProgramacionMP(equipo) {
+    return equipo.estado !== 'baja' && !MESES.some(m => mpProgramadaEnMes(equipo, m));
   }
 
   // ==========================================================================
@@ -2038,7 +2050,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
@@ -2237,6 +2249,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const mpPend = mpProg.filter(e => H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
     const pct = mpProg.length ? Math.round(mpEjec.length / mpProg.length * 100) : 0;
     const mpAtras = S.equipos.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
+    const sinProgMP = S.equipos.filter(e => H.sinProgramacionMP(e));
+    const reprogPend = pendAct.filter(p => p.tipo === 'reprogramacion');
+    const recordHoy = pendAct.filter(p => p.proxRecord && p.proxRecord <= H.hoyLocal());
 
     const alert = (cls, n, label, onclick, sub) => h('div', { class: 'alert-card ' + cls, onclick },
       h('div', { class: 'a-n' }, n), h('div', {}, h('div', { class: 'a-l' }, label), sub ? h('div', { class: 'a-l faint', style: { marginTop: '1px' } }, sub) : null));
@@ -2250,6 +2265,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       alert(pct >= 100 ? 'lo' : pct >= 50 ? 'med' : 'hi', pct + '%', 'MP del mes', () => go('asignaciones'), mpEjec.length + '/' + mpProg.length + ' ejecutadas'),
       alert('hi', mpAtras.length, 'MP atrasadas', () => go('equipos', { mpAtras: 1 }), 'meses previos'),
       alert('lo', ciclosAb.length, 'Ciclos abiertos', () => go('ciclos', { estado: 'abierto' }), 'correctivos en curso'),
+      alert(reprogPend.length ? 'med' : 'lo', reprogPend.length, 'Reprogramaciones', () => go('pendientes', { tipo: 'reprogramacion' }), 'MP por reprogramar'),
+      alert(recordHoy.length ? 'med' : 'lo', recordHoy.length, 'Recordatorios hoy', () => go('pendientes', { record: 1 }), 'seguimientos para hoy'),
+      alert('lo', sinProgMP.length, 'Sin programación MP', () => go('equipos', { sinProg: 1 }), 'equipos sin MP anual'),
       alert('lo', borradores.length, 'Borradores', () => go('eventos', { oficial: 'No' }), 'sin oficializar'),
       alert('lo', conf.length, 'Conflictos', () => go('conciliacion'), 'con el maestro')
     ));
@@ -2316,13 +2334,24 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // ---- EQUIPOS ------------------------------------------------------------
   VIEWS.equipos = function () {
     const S = H.getState();
-    let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false };
+    let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
+    const eqSel = new Set();
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
     const familias = [...new Set(S.equipos.map(e => e.fam).filter(Boolean))].sort();
 
     const tblWrap = h('div', { class: 'tbl-wrap' });
     const countNote = h('span', { class: 'count-note' });
+    const bulkBar = h('div', { class: 'filterbar', style: { display: 'none', background: 'var(--accent-bg)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' } });
+    function updBulk() {
+      const n = eqSel.size; bulkBar.style.display = n ? '' : 'none'; if (!n) return;
+      mount(bulkBar,
+        h('b', {}, `${n} equipo${n !== 1 ? 's' : ''}`),
+        selectEl([['', 'Asignar encargado…'], ...EJECUTORES.map(x => [x, x]), ['__none', '— quitar encargado —']], '', { onchange: e => { const v = e.target.value; if (!v) return; const val = v === '__none' ? null : v; [...eqSel].forEach(inv => { const eq = H.findEquipo(inv); if (eq) H.asignarEncargado(eq, val); }); H.save(); toast(`Encargado actualizado · ${n}`, 'success'); eqSel.clear(); render(); } }),
+        h('button', { class: 'btn sm', onclick: () => exportarEquipos(data().filter(e => eqSel.has(e.inv))) }, svg(ic.dl, 14), 'Exportar selección'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm ghost', onclick: () => { eqSel.clear(); render(); } }, 'Limpiar'));
+    }
 
     function data() {
       let list = S.equipos.slice();
@@ -2330,6 +2359,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (f.servicio) list = list.filter(e => e.servicio === f.servicio);
       if (f.fam) list = list.filter(e => e.fam === f.fam);
       if (f.sinEnc) list = list.filter(e => e.estado !== 'baja' && !H.encargadoDe(e));
+      if (f.sinProg) list = list.filter(e => H.sinProgramacionMP(e));
       if (params.alerta30) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
       if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
@@ -2347,37 +2377,55 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
       const th = (key, lbl, cls) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
         lbl, sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null);
+      const allChk = h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(x => eqSel.add(x.inv)); else eqSel.clear(); render(); } });
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
-          th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
+          h('th', { class: 'shrink' }, allChk), th('inv', 'N° Inv.'), th('equipo', 'Equipo'), th('servicio', 'Servicio'),
           th('estado', 'Estado'), th('fam', 'Familia'), th('freq', 'Freq'), th('mp', `MP ${MES_ESP(MONTH)}`), h('th', {}, 'Encargado'), th('pend', 'Pend.', 'num'))),
-        h('tbody', {}, ...list.map(e => h('tr', { onclick: () => go('equipo', { inv: e.inv }) },
-          h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
-          h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
-          h('td', {}, mpMesBadge(e)),
-          h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, H.encargadoDe(e) || 'sin asignar'),
-          h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()))))
+        h('tbody', {}, ...list.map(e => {
+          const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
+          const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
+            h('td', { onclick: ev => ev.stopPropagation() }, chk),
+            h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
+            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', {}, mpMesBadge(e)),
+            h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, H.encargadoDe(e) || 'sin asignar'),
+            h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
+          return tr;
+        }))
       ));
       kbList = { rows: list.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
+      updBulk();
     }
 
     const qInput = h('input', { type: 'search', placeholder: 'Buscar inv, equipo, serie, marca…', value: f.q, oninput: e => { f.q = e.target.value; render(); } });
     const seg = h('div', { class: 'seg' }, ...[['todos', 'Todos'], ['operativo', 'Operativos'], ['no_operativo', 'No oper.'], ['en_servicio_tecnico', 'Serv. téc.'], ['baja', 'Baja']].map(([v, l]) =>
       h('button', { class: f.estado === v ? 'on' : '', onclick: e => { f.estado = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
 
-    const incomingChip = (params.alerta30 || params.mpAtras)
-      ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, params.alerta30 ? 'Alerta >30 días' : 'MP atrasadas'),
-        h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
+    const chips = [];
+    if (params.alerta30) chips.push('Alerta >30 días');
+    if (params.mpAtras) chips.push('MP atrasadas');
+    if (params.sinProg) chips.push('Sin programación MP');
+    const incomingChip = chips.length ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, chips.join(' · ')), h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
     const root = h('div', {},
       h('div', { class: 'filterbar' }, qInput, seg,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
         field(null, selectEl([['', 'Toda familia'], ...familias.map(s => [s, s])], f.fam, { onchange: e => { f.fam = e.target.value; render(); } })),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.sinEnc = e.target.checked; render(); } }), 'Sin encargado'),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.sinProg ? true : false, onchange: e => { f.sinProg = e.target.checked; render(); } }), 'Sin prog. MP'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => exportarEquipos(data()) }, svg(ic.dl, 14), 'Exportar'),
         incomingChip, countNote),
-      tblWrap);
+      bulkBar, tblWrap);
     render();
     return root;
   };
+  function exportarEquipos(list) {
+    const estLbl = { ejecutada: 'Ejecutada', reprogramada: 'Reprogramada', otro: 'Otro', pendiente: 'Pendiente' };
+    const header = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Familia', 'Marca', 'Modelo', 'Serie', 'Freq MP', 'Estado', 'Días', 'Encargado', 'Pend. abiertos', `MP ${MES_ESP(MONTH)}`];
+    const rows = list.map(e => [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.fam || '', e.marca || '', e.modelo || '', e.serie || '', e.freq || '', ESTADO_LABEL[e.estado] || e.estado, H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, estLbl[H.mpEstadoMes(e, YEAR, MONTH)] || '']);
+    exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `SIGEM_equipos_${H.hoyLocal()}.xlsx`);
+  }
   function mpMesBadge(e) {
     if (e.estado === 'baja') return h('span', { class: 'faint' }, '—');
     const prog = H.mpProgramadaEnMes(e, MESES[MONTH]);
@@ -2409,6 +2457,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formNuevoEvento({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo evento'),
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
+        h('button', { class: 'btn sm', onclick: () => formAsignarEncargado(eq) }, 'Encargado'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
     const tabsDef = [['resumen', 'Resumen'], ['matriz', 'Matriz MP'], ['bitacora', 'Bitácora'], ['ciclos', 'Ciclos'], ['pendientes', 'Pendientes', pends.length], ['conflictos', 'Conflictos', confs.length]];
@@ -2500,7 +2549,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   let pendSel = new Set();
   VIEWS.pendientes = function () {
     const S = H.getState();
-    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: '', q: '', serv: '', ejec: params.ejec || '' };
+    let f = { estado: params.vencidos ? 'activos' : (params.estado || 'activos'), tipo: params.tipo || '', q: '', serv: '', ejec: params.ejec || '', record: !!params.record };
     pendSel = new Set();
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
     const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
@@ -2520,7 +2569,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       let list = base();
       if (f.ejec === '__none') list = list.filter(p => !p.ejecutor);
       else if (f.ejec) list = list.filter(p => p.ejecutor === f.ejec);
+      if (f.record) list = list.filter(p => p.proxRecord && p.proxRecord <= H.hoyLocal() && p.estado !== 'cerrado');
       if (f.q) { const q = norm(f.q); list = list.filter(p => norm(`${p.inv} ${p.equipo} ${p.desc} ${p.ejecutor}`).includes(q)); }
+      // Orden: más atrasados primero (compromiso ascendente; sin fecha al final).
       return list.sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
     }
     function renderCarga() {
@@ -2554,6 +2605,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     }
     const seg = h('div', { class: 'seg' }, ...[['activos', 'Activos'], ['no_iniciado', 'No iniciado'], ['en_proceso', 'En proceso'], ['cerrado', 'Resueltos'], ['todos', 'Todos']].map(([v, l]) =>
       h('button', { class: f.estado === v ? 'on' : '', onclick: e => { f.estado = v; params.vencidos = 0; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
+    const presetChip = (params.tipo === 'reprogramacion' || params.record)
+      ? h('span', { class: 'chip', style: { color: 'var(--accent)', borderColor: 'var(--accent)' } }, h('b', {}, params.record ? 'Recordatorios para hoy' : 'Reprogramaciones MP'), h('span', { class: 'x', onclick: () => go('pendientes', {}) }, '×')) : null;
     const root = h('div', {},
       h('div', { class: 'filterbar' },
         h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { f.q = e.target.value; render(); } }), seg,
@@ -2561,24 +2614,37 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.serv, { onchange: e => { f.serv = e.target.value; render(); } }),
         selectEl([['', 'Todo responsable'], ['__none', 'Sin asignar'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: params.vencidos ? true : false, onchange: e => { params.vencidos = e.target.checked ? 1 : 0; render(); } }), 'Solo vencidos'),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.record ? true : false, onchange: e => { f.record = e.target.checked; render(); } }), 'Recordatorio ≤ hoy'),
+        presetChip,
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => exportarPendientes(data()) }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo'), note),
       cargaBox, bulkBar, wrap);
     render(); return root;
   };
+  function exportarPendientes(list) {
+    const header = ['ID', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Creado', 'Compromiso', 'Atraso (días)', 'Próx. recordatorio'];
+    const rows = list.map(p => { const at = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : ''; return [p.id, p.inv, p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fmtFecha(p.fechaCrea), fmtFecha(p.fechaComp), (at !== '' && at > 0 ? at : ''), fmtFecha(p.proxRecord)]; });
+    exportTablaExcel('Pendientes', 'Pendientes (vista filtrada) · ' + H.hoyLocal(), header, rows, `SIGEM_pendientes_${H.hoyLocal()}.xlsx`);
+  }
   function pendientesTable(list, opts) {
     opts = opts || {}; const sel = opts.sel;
     const headChk = sel ? h('th', { class: 'shrink' }, h('input', { type: 'checkbox', onchange: e => { if (e.target.checked) list.forEach(p => sel.add(p.id)); else list.forEach(p => sel.delete(p.id)); opts.onAll && opts.onAll(); } })) : null;
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-      h('thead', {}, h('tr', {}, headChk, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Tipo'), h('th', {}, 'Descripción'), h('th', {}, 'Estado'), h('th', {}, 'Responsable'), h('th', {}, 'Compromiso'))),
+      h('thead', {}, h('tr', {}, headChk, h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Tipo'), h('th', {}, 'Descripción'), h('th', {}, 'Estado'), h('th', {}, 'Responsable'), h('th', {}, 'Compromiso'), h('th', { class: 'num' }, 'Atraso'), h('th', {}, 'Recordatorio'))),
       h('tbody', {}, ...list.map(p => {
         const venc = p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado';
+        const atraso = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : null;
+        const recVenc = p.proxRecord && p.proxRecord <= H.hoyLocal() && p.estado !== 'cerrado';
         const chk = sel ? h('td', { onclick: ev => ev.stopPropagation() }, h('input', { type: 'checkbox', checked: sel.has(p.id) ? true : false, onchange: ev => { ev.target.checked ? sel.add(p.id) : sel.delete(p.id); tr.classList.toggle('sel', ev.target.checked); opts.onToggle && opts.onToggle(); } })) : null;
         const tr = h('tr', { class: sel && sel.has(p.id) ? 'sel' : '', onclick: () => formPendiente(p) },
           chk,
           h('td', { class: 'mono' }, p.inv), h('td', {}, p.equipo || '—'), h('td', { class: 'muted' }, TIPO_PENDIENTE[p.tipo] || p.tipo),
           h('td', { class: 'wrap' }, (p.desc || '—')), h('td', {}, pendPill(p.estado)),
           h('td', { class: p.ejecutor ? 'muted' : '', style: p.ejecutor ? null : { color: 'var(--st)' } }, p.ejecutor || 'sin asignar'),
-          h('td', { class: venc ? '' : 'muted', style: venc ? { color: 'var(--noop)', fontWeight: 600 } : null }, p.fechaComp ? fmtFecha(p.fechaComp) : '—'));
+          h('td', { class: venc ? '' : 'muted', style: venc ? { color: 'var(--noop)', fontWeight: 600 } : null }, p.fechaComp ? fmtFecha(p.fechaComp) : '—'),
+          h('td', { class: 'num' }, atraso != null && atraso > 0 ? h('span', { class: 'pill noop' }, '+' + atraso + ' d') : (atraso != null ? h('span', { class: 'faint' }, atraso + ' d') : h('span', { class: 'faint' }, '—'))),
+          h('td', { class: recVenc ? '' : 'muted', style: recVenc ? { color: 'var(--st)', fontWeight: 600 } : null }, p.proxRecord ? fmtFecha(p.proxRecord) : '—'));
         return tr;
       }))));
   }
@@ -2903,6 +2969,17 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn danger', onclick: () => { if (!motivo.value.trim()) return toast('Motivo requerido', 'error'); H.darDeBaja(eq, motivo.value.trim()); toast('Equipo dado de baja', 'success'); closeDrawer(); go('equipo', { inv: eq.inv }); } }, 'Confirmar baja')]
     });
   }
+  function formAsignarEncargado(eq) {
+    const sel = selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], eq.encargado || '');
+    openDrawer({
+      title: 'Encargado del equipo · ' + eq.inv,
+      body: h('div', {}, eqMini(eq),
+        h('div', { class: 'notice info' }, eq.encargado ? 'Tiene un responsable asignado explícitamente.' : 'Sin responsable explícito; hoy se muestra el derivado (ciclo abierto o último ejecutor): ' + (H.encargadoDe(eq) || '—') + '.'),
+        field('Responsable del equipo', sel)),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: () => { H.asignarEncargado(eq, sel.value || null); H.save(); toast('Encargado actualizado', 'success'); closeDrawer(); go('equipo', { inv: eq.inv }); } }, 'Guardar')]
+    });
+  }
   function eqMini(eq, p) {
     return h('div', { class: 'mini-row', style: { display: 'block' } },
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, h('b', {}, eq.equipo || (p && p.equipo) || '—'), h('span', { class: 'mono faint' }, eq.inv || (p && p.inv)), eq.estado ? estadoPill(eq.estado) : null),
@@ -2960,6 +3037,17 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
   // ============================ backup / excel / plantilla ==================
   function dl(blob, name) { const url = URL.createObjectURL(blob); const a = h('a', { href: url, download: name }); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+  // Exporta una lista (la vista ACTUAL ya filtrada) a un .xlsx de una hoja, con autofiltro.
+  function exportTablaExcel(hoja, titulo, header, rows, filename) {
+    if (!window.XLSX) return toast('XLSX no disponible (sin conexión)', 'error');
+    const aoa = [[titulo], [], header, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(header.length - 1, 1) } }];
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 2, c: 0 }, e: { r: 2 + rows.length, c: header.length - 1 } }) };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, hoja.slice(0, 31));
+    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), filename);
+    toast(`Exportadas ${rows.length} fila(s)`, 'success');
+  }
   function backupExport() { dl(new Blob([H.exportarBackupJSON()], { type: 'application/json' }), 'sigem-backup-' + H.hoyLocal() + '.json'); toast('Backup JSON exportado', 'success'); }
   function backupImport() {
     const inp = h('input', { type: 'file', accept: 'application/json', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const data = JSON.parse(await f.text()); const msg = `Importar backup?\n· Equipos: ${data.equipos?.length || 0}\n· Eventos: ${data.eventos?.length || 0}\nReemplaza los datos actuales.`; if (!window.confirm(msg)) return; const r = H.importarBackup(data); if (!r.ok) return toast(r.error, 'error'); toast(`Importado · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });

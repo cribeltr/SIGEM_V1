@@ -75,6 +75,20 @@ interfaz sincronizada con el estado.
 
 Funciones para gestionar, no solo registrar:
 
+- **Encargado del equipo**: ahora se puede **asignar explícitamente** (en la ficha,
+  botón *Encargado*, o **en lote** seleccionando equipos en la lista). El motor lo
+  prioriza sobre el derivado (ciclo/último ejecutor).
+- **Equipos sin programación MP**: filtro *"Sin prog. MP"* + indicador en el inicio.
+- **Reprogramaciones (C1–C8)**: bandeja propia (inicio → *Reprogramaciones*, abre
+  Pendientes filtrado por ese tipo).
+- **Vencimientos**: columna **Atraso** (días) y **Recordatorio** en Pendientes,
+  orden por compromiso (más atrasados primero) y filtro *"Recordatorio ≤ hoy"*
+  (+ indicador *Recordatorios hoy* en el inicio).
+- **Exportar vista filtrada** a Excel: botón *Exportar* en **Equipos** y
+  **Pendientes** (y *Exportar selección* en Equipos) — saca a `.xlsx` lo que estás
+  viendo (p. ej. los pendientes de un responsable).
+
+
 - **Pendientes**: filtro por **responsable** (incluye **"Sin asignar"**), filtro
   **"Solo vencidos"**, panel **"Carga por responsable"** (cuántos pendientes lleva
   cada uno, clic para filtrar) y **acciones en lote** sobre la selección —

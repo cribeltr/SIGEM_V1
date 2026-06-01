@@ -412,11 +412,23 @@
   function ciclosAbiertosDe(inv) { return state.ciclos.filter(c => c.inv === inv && c.estado === 'abierto'); }
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
+    if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
     const c = ciclosAbiertosDe(equipo.inv)[0];
     if (c && c.ingenieroAsignado) return c.ingenieroAsignado;
     const evs = eventosDe(equipo.inv);
     for (let i = evs.length - 1; i >= 0; i--) { if (evs[i].ejecutor) return evs[i].ejecutor; }
     return null;
+  }
+  // Asigna (o quita) el responsable explícito de un equipo. No guarda (el llamador lo hace).
+  function asignarEncargado(equipo, persona) {
+    const antes = equipo.encargado || null;
+    equipo.encargado = persona || null;
+    audit('equipo', equipo.inv, 'encargado', antes, equipo.encargado);
+    return equipo;
+  }
+  // True si el equipo (no dado de baja) no tiene ningún mes con MP programada.
+  function sinProgramacionMP(equipo) {
+    return equipo.estado !== 'baja' && !MESES.some(m => mpProgramadaEnMes(equipo, m));
   }
 
   // ==========================================================================
@@ -1636,7 +1648,7 @@
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
