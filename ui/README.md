@@ -47,14 +47,18 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
   múltiple → **registrar MP** en lote, columna "MP del mes".
 - **Equipo (ficha)** — cabecera con estado + datos; pestañas **Resumen · Matriz MP ·
   Bitácora · Ciclos · Pendientes · Conflictos**. Acciones: MP rápida, nuevo evento,
-  pendiente, dar de baja. La **Matriz MP** es editable por celda (click → registra MP).
+  pendiente, dar de baja. La **Matriz MP** es editable por celda (click → registra MP)
+  e incluye una fila **Responsable** para asignar quién hace la MP de cada mes.
 - **Pendientes** — tabla por estado (activos/no iniciado/en proceso/resueltos), drawer
   con tareas atómicas y seguimientos.
 - **Eventos** — bitácora global con selector **Bitácora · Correctivos**: la
   bitácora permite oficializar / editar / anular (con reversión de efectos);
   **Correctivos** lista los ciclos abiertos/cerrados/anulados. (Los ciclos de un
   equipo también están en su ficha, pestaña *Ciclos*.)
-- **Asignaciones MP** — por mes: asignar responsable, descargar/subir plantilla `.xlsx`.
+- **MP del mes** (sin ítem de menú) — detalle por mes de los equipos con MP programada
+  y su responsable; se abre como **drill-down desde Cumplimiento** (y la alerta de MP del
+  mes en la Cola de trabajo). El responsable de cada mes también se asigna desde la
+  **Matriz MP** de la ficha del equipo.
 - **Conciliación** — importar maestro Excel, auto-completar y resolver diferencias
   (aceptar maestro / mantener / manual / posponer, individual y en lote).
 

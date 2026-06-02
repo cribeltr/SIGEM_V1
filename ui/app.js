@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b13';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b14';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -128,7 +128,6 @@
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
-    { id: 'asignaciones', label: 'Asignaciones MP', icon: 'asignaciones' },
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
     { id: 'configuracion', label: 'Configuración', icon: 'config' }
   ];
@@ -145,8 +144,9 @@
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
-    // 'equipo' (ficha) y 'ciclos' (correctivos, fusionado en Eventos) son vistas válidas aunque no estén en el menú.
-    if (NAV.find(n => n.id === v) || v === 'equipo' || v === 'ciclos') { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
+    // 'equipo' (ficha), 'ciclos' (en Eventos) y 'asignaciones' (detalle MP, en la ficha + drill-down de Cumplimiento)
+    // son vistas válidas aunque no estén en el menú.
+    if (NAV.find(n => n.id === v) || v === 'equipo' || v === 'ciclos' || v === 'asignaciones') { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
   }
 
   // ============================ VIEWS =======================================
@@ -455,7 +455,8 @@
   function tabMatriz(eq) {
     const yearSel = selectEl([YEAR + 1, YEAR, YEAR - 1, YEAR - 2].map(y => [y, y]), params.year || YEAR, { onchange: e => { params.year = +e.target.value; mount($('#view'), VIEWS.equipo()); } });
     const yr = params.year || YEAR;
-    const obsList = H.getState().eventos.filter(e => e.inv === eq.inv && !e.anulado && e.tipo === 'Mantención preventiva' && (e.obs || '').trim() && e.fecha && e.fecha.startsWith(String(yr))).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    const S = H.getState();
+    const obsList = S.eventos.filter(e => e.inv === eq.inv && !e.anulado && e.tipo === 'Mantención preventiva' && (e.obs || '').trim() && e.fecha && e.fecha.startsWith(String(yr))).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
     return h('div', {},
       h('div', { class: 'section' },
         h('div', { class: 's-hd' }, h('h3', {}, 'Matriz de mantención preventiva'), h('div', { class: 'tb-spacer' }), field(null, yearSel)),
@@ -469,9 +470,15 @@
               const tieneObs = ev && (ev.obs || '').trim();
               const tip = ev ? (`${m} ${yr} · ${ev.resultado || 'Si'} · ${ev.ejecutor || 'sin ejecutor'}` + (tieneObs ? `\nObs: ${ev.obs}` : '')) : (r ? `${m}: ${r}` : `${m}: sin registro`);
               return h('td', { class: 'num mpcell ' + mpResultClass(r), title: tip, onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·', tieneObs ? h('sup', { style: { color: 'var(--accent)' } }, '✎') : null);
+            })),
+            h('tr', {}, h('td', { class: 'muted' }, 'Responsable'), ...MESES.map((mm, i) => {
+              const km = `${yr}-${String(i + 1).padStart(2, '0')}`;
+              const asig = (S.asignacionesMP || {})[km] || {};
+              return h('td', { class: 'num', style: { padding: '3px' } }, selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], asig[eq.inv] || '',
+                { class: 'mp-resp', title: `Responsable de MP · ${mm} ${yr}`, onchange: ev => { const st = H.getState(); st.asignacionesMP = st.asignacionesMP || {}; st.asignacionesMP[km] = st.asignacionesMP[km] || {}; if (ev.target.value) st.asignacionesMP[km][eq.inv] = ev.target.value; else delete st.asignacionesMP[km][eq.inv]; H.save(); } }));
             }))
         )))),
-        h('div', { class: 's-bd' }, h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Click en una celda de Resultado para registrar/editar la MP de ese mes. La ✎ indica que esa MP tiene observación. Códigos: Si=hecha · C1–C8=reprogramación · FS/NU/No=falla · Baja.'))),
+        h('div', { class: 's-bd' }, h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Click en una celda de Resultado para registrar/editar la MP de ese mes (✎ = tiene observación). En la fila Responsable eliges quién hace la MP de cada mes. Códigos: Si=hecha · C1–C8=reprogramación · FS/NU/No=falla · Baja.'))),
       h('div', { class: 'section' },
         h('div', { class: 's-hd' }, h('h3', {}, `Observaciones de MP · ${yr}`), h('span', { class: 's-sub' }, obsList.length + ' con nota')),
         h('div', { class: 's-bd flush' }, obsList.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
@@ -1384,7 +1391,7 @@
     cmdkEl = h('div', { class: 'cmdk cmdk-modal' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
     const actions = [
       ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
-      ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: Asignaciones MP', () => go('asignaciones'), '▤'], ['Ir: Configuración', () => go('configuracion'), '⚙'],
+      ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: MP del mes (detalle)', () => go('asignaciones'), '▤'], ['Ir: Configuración', () => go('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
@@ -1878,7 +1885,7 @@
     mount(railNav, h('div', { class: 'nav-group-lbl' }, 'Trabajo'),
       ...NAV.map(n => { const it = h('div', { class: 'nav-item', onclick: () => go(n.id) }, svg(ic[n.icon]), h('span', {}, n.label), h('span', { class: 'badge-count', style: { display: 'none' } })); navItems[n.id] = it; return it; }));
   }
-  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos')); }
+  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos') || (view === 'asignaciones' && id === 'cumplimiento')); }
   function refreshChrome() {
     const S = H.getState();
     const counts = {
@@ -1897,7 +1904,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'Asignaciones MP', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
+    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
     $('#tb-title').textContent = titles[view] || 'SIGEM';
   }
 
