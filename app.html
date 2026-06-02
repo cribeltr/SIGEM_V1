@@ -2016,7 +2016,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     normalizarEquipos();
     reconstruirCiclos();
     normalizarTiposEvento();
-    normalizarEstadoEventosMP();
+    normalizarEstadoEventos();
     state.__userActions = state.__userActions || 0;
     save();
     UI.onChange();
@@ -2166,16 +2166,27 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     });
     return n;
   }
-  // Corrige el campo `estado` de las MP cuya causal tiene estado determinista (C2/C3/FS/NU/Baja)
-  // pero quedó guardado distinto (dato heredado de importaciones antiguas). 'Si' admite override
-  // manual y C1/C4–C8 no cambian estado, así que no se tocan. Idempotente.
-  function normalizarEstadoEventosMP() {
-    let n = 0;
+  // Corrige el campo `estado` de eventos cuyo estado es DETERMINISTA por reglas de la app
+  // (no lo elige el usuario) pero quedó guardado distinto (dato heredado de importaciones
+  // antiguas). Casos deterministas:
+  //   · MP con causal C2/C3/FS/NU/Baja → estado según MP_CAUSAL_ESTADO
+  //   · Solicitud de trabajo           → 'no operativo'        (abre ciclo correctivo)
+  //   · Envío a servicio técnico       → 'en servicio técnico' (equipo sale del hospital)
+  // NO se tocan: MP 'Si' (admite override manual a no operativo), MP C1/C4–C8 (reprogramación
+  // sin cambio de estado), ni Visita/Recepción/Reparación/OC (estado lo elige el usuario).
+  // Recalcula el estado de los equipos afectados (en correctivos el estado del equipo deriva
+  // del estado del evento). Idempotente.
+  function normalizarEstadoEventos() {
+    let n = 0; const tocados = new Set();
     state.eventos.forEach(ev => {
-      if (ev.anulado || ev.tipo !== 'Mantención preventiva' || !MP_CAUSAL_ESTADO[ev.resultado]) return;
-      const esperado = estadoMPDesdeResultado(ev.resultado);
-      if (esperado && ev.estado !== esperado) { audit('evento', ev.id, 'estado', ev.estado, esperado + ' (normalización causal)'); ev.estado = esperado; n++; }
+      if (ev.anulado) return;
+      let esperado = null;
+      if (ev.tipo === 'Mantención preventiva' && MP_CAUSAL_ESTADO[ev.resultado]) esperado = estadoMPDesdeResultado(ev.resultado);
+      else if (ev.tipo === 'Solicitud de trabajo') esperado = 'no operativo';
+      else if (ev.tipo === 'Envío a servicio técnico') esperado = 'en servicio técnico';
+      if (esperado && ev.estado !== esperado) { audit('evento', ev.id, 'estado', ev.estado, esperado + ' (normalización determinista)'); ev.estado = esperado; n++; tocados.add(ev.inv); }
     });
+    tocados.forEach(inv => { const eq = findEquipo(inv); if (eq) recalcEstadoEquipo(eq); });
     return n;
   }
   // Devuelve un Set con los IDs de eventos MP DUPLICADOS (el 2º+ del mismo equipo y mes).
@@ -2199,7 +2210,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
       let cambios = limpiarEfectosAnulados();
       cambios += reconstruirCiclos();          // reconstruye ciclos si el backup no los trae
       cambios += normalizarTiposEvento();      // normaliza etiquetas antiguas de tipo
-      cambios += normalizarEstadoEventosMP();  // corrige estado de MP con causal determinista (C2/C3/FS/NU/Baja)
+      cambios += normalizarEstadoEventos();    // corrige estado determinista (MP causal, Solicitud, Envío)
       if (cambios > 0) {
         save({ internal: true });
         UI.notify(`Migración: ${cambios} ajuste${cambios > 1 ? 's' : ''} de consistencia aplicado${cambios > 1 ? 's' : ''}.`, 'success');
@@ -2228,7 +2239,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
-    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventosMP, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
+    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
     // utilidades
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
@@ -2330,7 +2341,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b17';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b18';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
