@@ -857,6 +857,21 @@
         h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
       head, banner, avisoConf, tabs, body);
   };
+  // Gestiones y seguimientos registrados (lo que se anota con "Registrar gestión"
+  // y los seguimientos de los pendientes). Aquí es donde se ven las gestiones.
+  function gestionesPanel(eq) {
+    const segs = [];
+    H.pendientesDe(eq.inv).forEach(p => (p.seguimientos || []).forEach(s => segs.push({ fecha: s.fecha, autor: s.autor, texto: s.texto, pTipo: TIPO_PENDIENTE[p.tipo] || p.tipo, p })));
+    if (!segs.length) return null;
+    segs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const ug = H.ultimaGestion(eq.inv);
+    return h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.cloud, 15), h('h3', {}, 'Gestiones y seguimientos'), h('span', { class: 's-sub' }, segs.length + (ug ? ' · última ' + fmtFecha(ug.fecha) : ''))),
+      h('div', { class: 's-bd' }, h('div', { class: 'row-list' }, ...segs.slice(0, 25).map(s =>
+        h('div', { class: 'mini-row', style: { display: 'block', cursor: 'pointer' }, title: 'Abrir el pendiente', onclick: () => formPendiente(s.p) },
+          h('div', { class: 'm-meta' }, h('b', {}, s.autor || 'Cristian'), ' · ', fmtFecha(s.fecha), ' · ', h('span', { class: 'faint' }, s.pTipo)),
+          h('div', { class: 'm-txt' }, s.texto || '—'))))));
+  }
   // === Pestaña HISTORIAL: ciclo correctivo + pendientes + bitácora (línea de tiempo) ===
   function tabHistorial(eq) {
     const out = h('div', {});
@@ -889,7 +904,7 @@
       return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), h('span', { class: 's-sub' }, `${nAct} activo(s) · ${nRes} resuelto(s)`), h('div', { class: 'tb-spacer' }), seg,
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')), pbody);
     })();
-    mount(out, ciclosCard, pendSection, eventoTimeline(eq));
+    mount(out, ciclosCard, gestionesPanel(eq), pendSection, eventoTimeline(eq));
     return out;
   }
   // Bitácora como línea de tiempo legible (fecha · tipo · resultado/estado · ejecutor · 📎 · pendientes; clic = editar).

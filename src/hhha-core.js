@@ -908,11 +908,13 @@
         }, conflictosNuevos);
       });
 
-      // Registro_MP: P y R
+      // Registro_MP: la P (programación) ya se concilió arriba contra PMP; aquí solo
+      // se concilia la R (resultado). Solo si el equipo NO está en PMP se concilia
+      // también la P desde Registro (evita el conflicto DUPLICADO de la misma celda P).
       MESES.forEach(mes => {
         const regProg = (eq.registro || {})[mes] || {};
         const regMast = (fromReg && fromReg.reg[mes]) || {};
-        ['P', 'R'].forEach(campo => {
+        (fromPMP ? ['R'] : ['P', 'R']).forEach(campo => {
           const vp = valNorm(regProg[campo] || '');
           const vm = valNorm(regMast[campo] || '');
           if (vp === vm) {
