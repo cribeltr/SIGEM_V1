@@ -335,6 +335,36 @@ td.shrink { width: 1%; }
 .kv .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; color: var(--faint); font-weight: 600; }
 .kv .v { font-size: 12.5px; }
 
+/* Ficha: datos técnicos plegables */
+.eq-datos { margin-top: 10px; }
+.eq-datos > summary { cursor: pointer; color: var(--muted); font-size: 11.5px; font-weight: 600; list-style: none; display: inline-flex; align-items: center; gap: 6px; user-select: none; }
+.eq-datos > summary::-webkit-details-marker { display: none; }
+.eq-datos > summary::before { content: '▸'; font-size: 10px; transition: transform .12s; }
+.eq-datos[open] > summary::before { transform: rotate(90deg); }
+.eq-datos > summary:hover { color: var(--text); }
+
+/* Bitácora como línea de tiempo */
+.timeline { display: flex; flex-direction: column; }
+.tl-item { display: flex; gap: 11px; }
+.tl-rail { flex: 0 0 11px; position: relative; }
+.tl-rail::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: var(--border); }
+.tl-item:first-child .tl-rail::before { top: 11px; }
+.tl-item:last-child .tl-rail::before { bottom: auto; height: 13px; }
+.tl-dot { position: absolute; left: 50%; top: 9px; transform: translateX(-50%); width: 9px; height: 9px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 3px var(--surface); z-index: 1; }
+.tl-dot.tl-operativo { background: var(--op); }
+.tl-dot.tl-no_operativo { background: var(--noop); }
+.tl-dot.tl-en_servicio_tecnico { background: var(--st); }
+.tl-dot.tl-baja { background: var(--baja); }
+.tl-card { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 9px 12px; margin-bottom: 9px; transition: border-color .1s, background .1s; }
+.tl-card:hover { border-color: var(--border-2); background: var(--surface-2); }
+.tl-item.anulado .tl-card { opacity: .55; }
+.tl-hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-hd .tl-fecha { font-size: 11px; color: var(--faint); }
+.tl-hd b { font-size: 12.5px; }
+.tl-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: normal; overflow-wrap: anywhere; }
+.tl-obs { font-size: 12px; color: var(--text); margin-top: 5px; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.tl-pends { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+
 /* ----------------------------- Drawer ----------------------------------- */
 .scrim { position: fixed; inset: 0; background: rgba(10,12,16,.42); opacity: 0; pointer-events: none; transition: opacity .16s; z-index: 50; }
 .scrim.on { opacity: 1; pointer-events: auto; }
@@ -1703,6 +1733,71 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     return { ok: true, evento: ev };
   }
 
+  // Corrige EN SITIO una MP ya registrada (p. ej. C6 → C3): revierte los efectos
+  // del resultado/fecha anteriores, aplica los nuevos y recalcula el estado del
+  // equipo. Mantiene un único evento (no duplica). d = {resultado, fecha?, ejecutor?, obs?, estadoSi?}.
+  function corregirMP(ev, d) {
+    if (!ev || ev.anulado) return { ok: false, error: 'Evento no editable' };
+    if (ev.tipo !== 'Mantención preventiva') return { ok: false, error: 'No es una mantención preventiva' };
+    const eq = findEquipo(ev.inv);
+    if (!eq) return { ok: false, error: 'Equipo no encontrado' };
+    if (!d.resultado) return { ok: false, error: 'Selecciona un resultado' };
+    const nuevaFecha = d.fecha || ev.fecha;
+    if (!nuevaFecha) return { ok: false, error: 'Fecha requerida' };
+
+    // 1) Revertir los efectos del resultado/fecha anteriores.
+    revertirEfectosMP(ev);
+    // 2) Aplicar los nuevos valores al evento.
+    if (d.resultado !== ev.resultado) audit('evento', ev.id, 'resultado', ev.resultado, d.resultado);
+    if (nuevaFecha !== ev.fecha) audit('evento', ev.id, 'fecha', ev.fecha, nuevaFecha);
+    ev.resultado = d.resultado;
+    ev.fecha = nuevaFecha;
+    if (d.ejecutor !== undefined && d.ejecutor !== '') ev.ejecutor = d.ejecutor;
+    if (d.obs !== undefined) ev.obs = d.obs || null;
+    ev.estado = estadoMPFinal(d.resultado, d.estadoSi);
+    ev.ts = new Date().toISOString();
+    // 3) Re-aplicar efectos (R del mes, pendientes por causal, marca R del mes siguiente) y recalcular estado.
+    aplicarEfectosEvento(ev);
+    recalcEstadoEquipo(eq);
+    if (d.ejecutor) setPref('ultimoEjecutor', d.ejecutor);
+    setPref('ultimoResultadoMP', d.resultado);
+    save();
+    return { ok: true, evento: ev };
+  }
+
+  // Revierte los efectos colaterales de una MP (R del mes, marca R del mes
+  // siguiente por causal y pendientes automáticos derivados del evento).
+  // NO toca el estado del equipo: el llamador recalcula con recalcEstadoEquipo.
+  function revertirEfectosMP(ev) {
+    const eq = findEquipo(ev.inv);
+    if (!eq || !ev.fecha) return;
+    const [y, m] = ev.fecha.split('-').map(Number);
+    const mes = MESES[m - 1];
+    // Pendientes automáticos creados por este evento (reprogramación / localizar): se anulan si siguen abiertos.
+    state.pendientes.forEach(p => {
+      if (p.eventoOrigen === ev.id && !p.anulado && p.origen === 'auto_mp_causal' && p.estado !== 'cerrado') {
+        p.anulado = true; p.fechaAnulacion = new Date().toISOString(); p.motivoAnulacion = 'Corrección de la MP de origen';
+        audit('pendiente', p.id, 'anulado', false, true);
+      }
+    });
+    // Marca 'R' del mes siguiente, si la dejó un causal C1–C8 y sigue intacta.
+    if (/^C[1-8]$/.test(ev.resultado || '') && m < 12) {
+      const ms = MESES[m];
+      if (eq.registro && eq.registro[ms] && eq.registro[ms].P === 'R') {
+        delete eq.registro[ms].P;
+        if (Object.keys(eq.registro[ms]).length === 0) delete eq.registro[ms];
+      }
+    }
+    // R del mes: recomputar desde otras MP no anuladas del mismo mes (igual que en la anulación).
+    if (eq.registro && eq.registro[mes]) {
+      const otras = state.eventos.filter(x => x.id !== ev.id && !x.anulado && x.inv === ev.inv &&
+        x.tipo === 'Mantención preventiva' && x.fecha && x.resultado &&
+        x.fecha.startsWith(`${y}-${String(m).padStart(2, '0')}`)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+      if (otras.length) eq.registro[mes].R = otras[0].resultado;
+      else { delete eq.registro[mes].R; if (Object.keys(eq.registro[mes]).length === 0) delete eq.registro[mes]; }
+    }
+  }
+
   // Registro masivo de MPs. (Núcleo de la antigua "mpMasiva".)
   // d = {invs, fecha, resultado, ejecutor, obs, estadoSi, omitirDuplicados=true}
   function registrarMPMasiva(d) {
@@ -2335,7 +2430,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     parsearHojaRegistro, compararMaestro, registrarOActualizarConflicto,
     resolverConflicto, nombreCampoConflicto,
     // operaciones MP
-    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, registrarMPMasiva,
+    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, corregirMP, registrarMPMasiva,
     // operaciones eventos
     crearEvento, docsEsperadosEvento, oficializarEvento, editarEvento, anularEvento,
     // operaciones pendientes / baja
@@ -2422,7 +2517,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-02 · v1.3';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-02 · v2.0';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2514,9 +2609,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
     const v = m[0] || 'inicio';
-    // 'equipo' (ficha), 'ciclos' (en Eventos) y 'asignaciones' (detalle MP, en la ficha + drill-down de Cumplimiento)
-    // son vistas válidas aunque no estén en el menú.
-    if (NAV.find(n => n.id === v) || v === 'equipo' || v === 'ciclos' || v === 'asignaciones') { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
+    // Cualquier vista registrada es navegable por hash, esté o no en el menú
+    // (p. ej. equipo, ciclos, asignaciones, configuración).
+    if (VIEWS[v]) { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
   }
 
   // ============================ VIEWS =======================================
@@ -2979,83 +3074,151 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   VIEWS.equipo = function () {
     const eq = H.findEquipo(params.inv);
     if (!eq) return h('div', { class: 'empty' }, 'Equipo no encontrado · ', h('span', { class: 'link', onclick: () => go('equipos') }, 'volver'));
-    const tab = params.tab || 'resumen';
+    // Normaliza nombres de pestaña antiguos al nuevo esquema de 3 pestañas.
+    const TAB_MAP = { resumen: 'historial', bitacora: 'historial', ciclos: 'historial', pendientes: 'historial', conflictos: 'historial', auditoria: 'historial', matriz: 'mantencion', mantencion: 'mantencion', historial: 'historial', archivos: 'archivos' };
+    const tab = TAB_MAP[params.tab] || 'historial';
     const confs = H.conflictosDe(eq.inv);
     const pends = H.pendientesDe(eq.inv).filter(p => p.estado !== 'cerrado');
+    const dias = H.diasEnEstado(eq);
+    const ug = H.ultimaGestion(eq.inv);
+    const diasSinG = ug ? H.diasEntreFechas(ug.fecha, H.hoyLocal()) : null;
+
+    // Datos técnicos plegables (no distraen del trabajo del día a día).
+    const datos = h('details', { class: 'eq-datos' },
+      h('summary', {}, 'Datos del equipo'),
+      h('div', { class: 'kv-grid', style: { marginTop: '10px' } }, ...[
+        ['N° Carpeta', eq.carpeta], ['Serie', eq.serie], ['Familia', eq.fam], ['Marca', eq.marca], ['Modelo', eq.modelo],
+        ['Servicio', eq.servicio], ['Unidad', eq.unidad], ['Ubicación', eq.ubic], ['Frecuencia MP', eq.freq],
+        ['Procedencia', eq.proc], ['Año', eq.ano], ['VUR', eq.vur], ['Clasificación', eq.clasif], ['Encargado', H.encargadoDe(eq)]
+      ].map(([k, v]) => h('div', { class: 'kv' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v == null || v === '' ? '—' : String(v))))));
 
     const head = h('div', { class: 'eq-head' },
-      h('div', { style: { flex: 1 } },
+      h('div', { style: { flex: 1, minWidth: 0 } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' } },
           h('span', { class: 'eq-id mono' }, eq.inv), h('span', { class: 'eq-name' }, eq.equipo || '—'), estadoPill(eq.estado),
-          eq.estadoDesde ? h('span', { class: 'faint', style: { fontSize: '11.5px' } }, `· ${H.diasEnEstado(eq)} día(s) en estado`) : null),
-        h('div', { class: 'kv-grid', style: { marginTop: '12px' } }, ...[
-          ['N° Carpeta', eq.carpeta], ['Serie', eq.serie], ['Familia', eq.fam], ['Marca', eq.marca], ['Modelo', eq.modelo],
-          ['Servicio', eq.servicio], ['Unidad', eq.unidad], ['Ubicación', eq.ubic], ['Frecuencia MP', eq.freq],
-          ['Procedencia', eq.proc], ['Año', eq.ano], ['VUR', eq.vur], ['Clasificación', eq.clasif], ['Encargado', H.encargadoDe(eq)]
-        ].map(([k, v]) => h('div', { class: 'kv' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v == null || v === '' ? '—' : String(v)))))),
+          eq.estadoDesde ? h('span', { class: 'faint', style: { fontSize: '11.5px' } }, `· ${dias} día(s) en estado`) : null,
+          ug ? h('span', { class: 'faint', style: { fontSize: '11.5px' }, title: ug.texto || '' }, `· última gestión hace ${diasSinG} día(s)`) : null),
+        datos),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formNuevoEvento({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo evento'),
         (eq.estado === 'no_operativo' || eq.estado === 'en_servicio_tecnico') ? h('button', { class: 'btn sm', title: 'Registrar seguimiento y fijar recordatorio', onclick: () => formRegistrarGestion(eq) }, svg(ic.cloud, 14), 'Registrar gestión') : null,
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
-    const tabsDef = [['resumen', 'Resumen'], ['matriz', 'Matriz MP'], ['bitacora', 'Bitácora'], ['ciclos', 'Ciclos'], ['pendientes', 'Pendientes', pends.length], ['conflictos', 'Conflictos', confs.length], ['auditoria', 'Auditoría']];
+    const tabsDef = [['mantencion', 'Mantención'], ['historial', 'Historial', pends.length], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
     const tabs = h('div', { class: 'tabs' }, ...tabsDef.map(([id, lbl, n]) =>
       h('button', { class: tab === id ? 'on' : '', onclick: () => go('equipo', { inv: eq.inv, tab: id }) }, lbl, n ? h('span', { class: 'badge-count' }, n) : null)));
 
     const body = h('div', {});
-    if (tab === 'resumen') mount(body, tabResumen(eq));
-    else if (tab === 'matriz') mount(body, tabMatriz(eq));
-    else if (tab === 'bitacora') mount(body, tabBitacora(eq));
-    else if (tab === 'ciclos') mount(body, tabCiclos(eq));
-    else if (tab === 'pendientes') mount(body, tabPendientes(eq));
-    else if (tab === 'conflictos') mount(body, tabConflictos(eq));
-    else if (tab === 'auditoria') mount(body, tabAuditoria(eq));
+    if (tab === 'mantencion') mount(body, tabMatriz(eq));
+    else if (tab === 'archivos') mount(body, tabArchivos(eq));
+    else mount(body, tabHistorial(eq));
 
-    const dias = H.diasEnEstado(eq);
-    const ug = H.ultimaGestion(eq.inv);
-    const diasSinG = ug ? H.diasEntreFechas(ug.fecha, H.hoyLocal()) : null;
     const banner = (eq.estado !== 'operativo' && eq.estado !== 'baja' && eq.estado !== 'desconocido')
       ? h('div', { class: 'notice ' + (dias > 30 ? 'warn' : 'info'), style: { marginBottom: '12px' } },
         `Estado: ${ESTADO_LABEL[eq.estado]} hace ${dias} día(s). Encargado: ${H.encargadoDe(eq) || '—'}.`
         + (ug ? ` Última gestión: ${fmtFecha(ug.fecha)} (hace ${diasSinG} día(s)) · ${ug.texto}.` : ' Sin gestiones registradas.')
         + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
       : null;
+    // Conflictos con el maestro: ya no son una pestaña, se muestran como aviso resoluble.
+    const avisoConf = confs.length ? h('div', { class: 'notice warn', style: { marginBottom: '12px' } },
+      h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
+        h('b', {}, `${confs.length} conflicto(s) con el maestro`),
+        h('span', { class: 'faint', style: { fontSize: '11.5px' } }, 'Diferencias entre lo registrado y el maestro importado.')),
+      h('div', { class: 'row-list', style: { marginTop: '8px' } }, ...confs.map(c => conflictoRow(c)))) : null;
+
     return h('div', { class: 'view-narrow' },
       h('div', { style: { marginBottom: '10px', fontSize: '12px' } },
         h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
-      head, banner, tabs, body);
+      head, banner, avisoConf, tabs, body);
   };
-  function eventoMini(e) {
-    const estado = e.estado ? e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico') : '';
-    return h('div', { class: 'mini-row' + (e.anulado ? ' done' : ''), style: { display: 'block', cursor: e.anulado ? 'default' : 'pointer' }, onclick: e.anulado ? null : () => formEditarEvento(e) },
-      h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
-        h('span', { class: 'faint', style: { fontSize: '11px' } }, fmtFecha(e.fecha)),
-        h('b', { style: { fontSize: '12px' } }, H.etiquetaTipoEvento(e)),
-        e.resultado ? h('span', { class: 'mono', style: { fontSize: '11px' } }, e.resultado) : null,
-        e.anulado ? h('span', { class: 'tag' }, 'anulado') : (e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador'))),
-      h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, [e.ejecutor, e.folio && ('Folio ' + e.folio)].filter(Boolean).join(' · ') || '—'),
-      (() => { const x = []; if (e.nCotiz) x.push('Cotización ' + e.nCotiz); if (e.nOC) x.push('OC ' + e.nOC); if (e.empresa) x.push(e.empresa); if (e.tecnico) x.push('Téc. ' + e.tecnico); if (e.nEnvio) x.push('Envío ' + e.nEnvio); return x.length ? h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px', color: 'var(--accent)' } }, x.join(' · ')) : null; })(),
-      e.obs ? h('div', { class: 'm-txt', style: { fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' } }, e.obs) : null);
-  }
-  function tabResumen(eq) {
-    const evs = H.eventosDe(eq.inv).slice(-8).reverse();
+  // === Pestaña HISTORIAL: ciclo correctivo + pendientes + bitácora (línea de tiempo) ===
+  function tabHistorial(eq) {
+    const out = h('div', {});
     const ciclosAb = H.ciclosAbiertosDe(eq.inv);
-    return h('div', { class: 'hsplit', style: { flexWrap: 'wrap' } },
+    // 1) Ciclo correctivo abierto, con etapa actual y siguiente paso (pipeline).
+    const ciclosCard = ciclosAb.length ? h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Ciclo correctivo'), h('span', { class: 's-sub' }, ciclosAb.length + ' abierto(s)')),
+      h('div', { class: 's-bd' }, h('div', { class: 'row-list' }, ...ciclosAb.map(c => {
+        const f = faseDeCiclo(c), dEt = diasEtapaCiclo(c), est = cicloEstancado(c), sig = FASE_SIGUIENTE[f.tipo];
+        const lblFase = t => (FASES_CORR.find(x => x[0] === t) || [, t])[1];
+        return h('div', { class: 'mini-row', style: { alignItems: 'center', gap: '8px' } },
+          h('div', { style: { flex: 1, minWidth: 0 } },
+            h('div', {}, h('span', { class: 'mono' }, c.folio || ('#' + c.id)), ' · ', h('b', {}, 'Etapa: ' + lblFase(f.tipo))),
+            h('div', { class: 'faint', style: { fontSize: '11px' } }, `${H.diasEntreFechas(c.fechaApertura, H.hoyLocal())} d abierto · ${dEt} d en esta etapa` + (est ? ' · ⚠ estancado' : ''))),
+          sig ? h('button', { class: 'btn sm', title: 'Registrar el siguiente evento del ciclo', onclick: () => formNuevoEvento({ inv: c.inv, tipo: sig }) }, '→ ' + lblFase(sig))
+            : h('button', { class: 'btn sm', title: 'Cerrar el ciclo (equipo operativo)', onclick: () => formNuevoEvento({ inv: c.inv, tipo: 'Reparación', estado: 'operativo' }) }, '✓ Cerrar'),
+          h('button', { class: 'btn sm ghost', title: 'Cerrar ciclo manualmente', onclick: () => { const m = window.prompt('Justificación del cierre manual:'); if (m) { H.cerrarCicloManual(c, m); scheduleRefresh(); } } }, 'Cierre manual'));
+      })))) : null;
+    // 2) Pendientes del equipo (activos/resueltos/todos).
+    const pendSection = (function () {
+      const all = H.pendientesDe(eq.inv).slice().sort((a, b) => (a.estado === 'cerrado') - (b.estado === 'cerrado') || (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
+      const nAct = all.filter(p => p.estado !== 'cerrado').length, nRes = all.filter(p => p.estado === 'cerrado').length;
+      let filtro = 'activos';
+      const pbody = h('div', { class: 's-bd' });
+      const lista = () => filtro === 'resueltos' ? all.filter(p => p.estado === 'cerrado') : filtro === 'todos' ? all : all.filter(p => p.estado !== 'cerrado');
+      const pr = () => { const ps = lista(); mount(pbody, ps.length ? h('div', { class: 'p-list' }, ...ps.map(pendienteCard)) : h('div', { class: 'empty' }, 'Sin pendientes' + (filtro === 'activos' ? ' activos' : filtro === 'resueltos' ? ' resueltos' : ''))); };
+      const seg = h('div', { class: 'seg' }, ...[['activos', `Activos${nAct ? ' · ' + nAct : ''}`], ['resueltos', `Resueltos${nRes ? ' · ' + nRes : ''}`], ['todos', 'Todos']].map(([v, l]) =>
+        h('button', { class: filtro === v ? 'on' : '', onclick: e => { filtro = v;[...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); pr(); } }, l)));
+      pr();
+      return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), h('span', { class: 's-sub' }, `${nAct} activo(s) · ${nRes} resuelto(s)`), h('div', { class: 'tb-spacer' }), seg,
+        h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')), pbody);
+    })();
+    mount(out, ciclosCard, pendSection, eventoTimeline(eq));
+    return out;
+  }
+  // Bitácora como línea de tiempo legible (fecha · tipo · resultado/estado · ejecutor · 📎 · pendientes; clic = editar).
+  function eventoTimeline(eq) {
+    const all = H.eventosDeTodos(eq.inv).slice().reverse();   // más reciente primero
+    const dup = H.idsMPDuplicadas();
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    let verAuto = false;
+    const body = h('div', { class: 's-bd' });
+    const sub = h('span', { class: 's-sub' });
+    function fila(e) {
+      const estadoNorm = e.estado ? e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico') : '';
+      const cierra = (e.tipo === 'Reparación' || e.tipo === 'Recepción' || (e.tipo === 'Visita técnica' && e.tipoVisita === 'correctiva')) && e.estado === 'operativo';
+      const ciclo = e.tipo === 'Solicitud de trabajo' ? 'abre ciclo' : (cierra ? 'cierra ciclo' : null);
+      const extras = []; if (e.nCotiz) extras.push('Cotización ' + e.nCotiz); if (e.nOC) extras.push('OC ' + e.nOC); if (e.empresa) extras.push(e.empresa); if (e.tecnico) extras.push('Téc. ' + e.tecnico); if (e.nEnvio) extras.push('Envío ' + e.nEnvio); if (e.folio) extras.push('Folio ' + e.folio);
+      const ps = pendsDe(e);
+      return h('div', { class: 'tl-item' + (e.anulado ? ' anulado' : '') },
+        h('div', { class: 'tl-rail' }, h('span', { class: 'tl-dot tl-' + (estadoNorm || 'n') })),
+        h('div', { class: 'tl-card', style: e.anulado ? null : { cursor: 'pointer' }, title: e.anulado ? '' : 'Clic para editar el evento', onclick: e.anulado ? null : () => formEditarEvento(e) },
+          h('div', { class: 'tl-hd' },
+            h('span', { class: 'tl-fecha mono' }, fmtFecha(e.fecha)),
+            h('b', {}, H.etiquetaTipoEvento(e)),
+            e.resultado ? h('span', { class: 'mono', style: { fontSize: '11px', color: 'var(--muted)' } }, e.resultado) : null,
+            estadoNorm ? estadoPill(estadoNorm) : null,
+            ciclo ? h('span', { class: 'tag' }, ciclo) : null,
+            e.anulado ? h('span', { class: 'tag' }, 'anulado') : (e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador')),
+            dup.has(e.id) ? h('span', { class: 'tag', style: { color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' }, title: 'Hay otra MP del mismo equipo en este mes' }, 'duplicada') : null,
+            (e.adjuntos && e.adjuntos.length) ? h('span', { class: 'tag', title: e.adjuntos.length + ' archivo(s) adjunto(s)' }, '📎' + e.adjuntos.length) : null,
+            h('div', { class: 'tb-spacer' }),
+            e.anulado ? null : h('button', { class: 'btn icon ghost sm', title: 'Acciones', onclick: ev => { ev.stopPropagation(); evActions(e, ev.currentTarget); } }, svg(ic.dots, 15))),
+          h('div', { class: 'tl-meta' }, (e.ejecutor || '—') + (extras.length ? ' · ' + extras.join(' · ') : '')),
+          e.obs ? h('div', { class: 'tl-obs' }, e.obs) : null,
+          h('div', { class: 'tl-pends', onclick: ev => ev.stopPropagation() },
+            ...ps.map(p => h('span', { class: 'tag', style: { cursor: 'pointer', borderColor: p.estado === 'cerrado' ? 'var(--border)' : 'color-mix(in srgb, var(--st) 45%, var(--border))' }, title: (TIPO_PENDIENTE[p.tipo] || p.tipo) + (p.desc ? ' · ' + p.desc : ''), onclick: () => formPendiente(p) }, (p.estado === 'cerrado' ? '✓ ' : '') + (TIPO_PENDIENTE[p.tipo] || p.tipo))),
+            h('button', { class: 'btn icon ghost sm', title: 'Crear pendiente de este evento', onclick: () => formNuevoPendiente({ inv: e.inv, eventoOrigen: e.id, desc: 'Derivado de: ' + H.etiquetaTipoEvento(e) + (e.folio ? ' (folio ' + e.folio + ')' : '') }) }, svg(ic.plus, 13)))));
+    }
+    function render() {
+      const evs = verAuto ? all : all.filter(e => !H.eventoEsAuto(e));
+      const ocultos = all.length - evs.length;
+      sub.textContent = `${evs.length} eventos` + (!verAuto && ocultos ? ` · ${ocultos} importados ocultos` : '');
+      mount(body, evs.length ? h('div', { class: 'timeline' }, ...evs.map(fila)) : h('div', { class: 'empty' }, verAuto ? 'Sin eventos' : 'Sin registros manuales'));
+    }
+    const chk = h('label', { class: 'checkbox', style: { fontSize: '12px' }, title: 'Mostrar también los eventos importados desde el maestro' },
+      h('input', { type: 'checkbox', onchange: e => { verAuto = e.target.checked; render(); } }), 'Ver importados');
+    render();
+    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Bitácora'), sub, h('div', { class: 'tb-spacer' }), chk), body);
+  }
+  // === Pestaña ARCHIVOS: adjuntos en Drive + notas del equipo ===
+  function tabArchivos(eq) {
+    return h('div', { class: 'hsplit', style: { flexWrap: 'wrap', alignItems: 'flex-start' } },
       h('div', { class: 'section', style: { flex: '1', minWidth: '300px' } },
-        h('div', { class: 's-hd' }, h('h3', {}, 'Últimos eventos'), h('div', { class: 'tb-spacer' }), evs.length ? h('button', { class: 'btn sm ghost', onclick: () => go('equipo', { inv: eq.inv, tab: 'bitacora' }) }, 'Ver bitácora') : null),
-        h('div', { class: 's-bd' }, evs.length ? h('div', { class: 'row-list' }, ...evs.map(eventoMini)) : h('div', { class: 'empty' }, 'Sin eventos'))),
-      h('div', { style: { width: '280px', flex: '0 0 auto' } },
-        h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclo correctivo')),
-          h('div', { class: 's-bd' }, ciclosAb.length
-            ? h('div', {}, h('div', { class: 'mono' }, ciclosAb[0].folio || '(sin folio)'), h('div', { class: 'faint', style: { fontSize: '11.5px', marginTop: '4px' } }, 'Abierto desde ' + fmtFecha(ciclosAb[0].fechaApertura)),
-              h('button', { class: 'btn sm', style: { marginTop: '9px' }, onclick: () => { const m = window.prompt('Justificación del cierre manual:'); if (m) { H.cerrarCicloManual(ciclosAb[0], m); } } }, 'Cerrar ciclo'))
-            : h('div', { class: 'faint' }, 'Sin ciclo abierto'))),
-        h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, `MP ${YEAR}`)),
-          h('div', { class: 's-bd' }, miniGantt(eq, YEAR))),
-        h('div', { class: 'section' }, h('div', { class: 's-hd' }, svg(ic.dl, 15), h('h3', {}, 'Archivos del equipo'), h('span', { class: 's-sub' }, (eq.adjuntos || []).length || '')),
-          h('div', { class: 's-bd' }, adjuntosBox(eq, eq.inv))),
-        notasPanel(eq)));
+        h('div', { class: 's-hd' }, svg(ic.dl, 15), h('h3', {}, 'Archivos del equipo'), h('span', { class: 's-sub' }, (eq.adjuntos || []).length || '')),
+        h('div', { class: 's-bd' }, adjuntosBox(eq, eq.inv))),
+      h('div', { style: { flex: '1', minWidth: '300px' } }, notasPanel(eq)));
   }
   function notasPanel(eq) {
     const box = h('div', {});
@@ -3104,60 +3267,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
             h('td', {}, fmtFecha(e.fecha)), h('td', { class: 'mono' }, e.resultado || '—'), h('td', { class: 'muted' }, e.ejecutor || '—'), h('td', { class: 'wrap' }, e.obs))))))
           : h('div', { class: 'empty' }, 'Sin observaciones registradas en las MP de este año'))));
   }
-  function miniGantt(eq, yr) {
-    return h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(12,1fr)', gap: '3px' } }, ...MESES.map((m, i) => {
-      const r = H.resultadoMPMes(eq, yr, i); const prog = H.mpProgramadaEnMes(eq, m);
-      const cls = r ? mpResultClass(r) : '';
-      return h('div', { title: `${m}: ${r || (prog ? 'programado' : '—')}`, style: { textAlign: 'center', fontSize: '9px', padding: '5px 0', borderRadius: '4px', fontWeight: 600, background: 'var(--surface-2)', border: '1px solid var(--border)', color: cls === 'ok' ? 'var(--op)' : cls === 're' ? 'var(--st)' : cls === 'bad' ? 'var(--noop)' : prog ? 'var(--accent)' : 'var(--faint)' } }, m[0]);
-    }));
-  }
-  function tabBitacora(eq) {
-    const all = H.eventosDeTodos(eq.inv).reverse();
-    let verAuto = false;
-    const body = h('div', { class: 's-bd flush' });
-    const sub = h('span', { class: 's-sub' });
-    function render() {
-      const evs = verAuto ? all : all.filter(e => !H.eventoEsAuto(e));
-      const ocultos = all.length - evs.length;
-      sub.textContent = `${evs.length} eventos` + (!verAuto && ocultos ? ` · ${ocultos} importados ocultos` : '');
-      mount(body, evs.length ? eventosTable(evs, true) : h('div', { class: 'empty' }, verAuto ? 'Sin eventos' : 'Sin registros manuales'));
-    }
-    const chk = h('label', { class: 'checkbox', style: { fontSize: '12px' }, title: 'Mostrar también los eventos importados desde el maestro' },
-      h('input', { type: 'checkbox', onchange: e => { verAuto = e.target.checked; render(); } }), 'Ver importados');
-    render();
-    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Bitácora'), sub, h('div', { class: 'tb-spacer' }), chk), body);
-  }
-  function tabCiclos(eq) {
-    const cs = H.ciclosDe(eq.inv);
-    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Ciclos correctivos')),
-      h('div', { class: 's-bd flush' }, cs.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'N° Informe / Folio'), h('th', {}, 'Apertura'), h('th', {}, 'Cierre'), h('th', {}, 'Estado'), h('th', {}, 'Ingeniero'))),
-        h('tbody', {}, ...cs.map(c => h('tr', {}, h('td', { class: 'mono' }, c.folio || '—'), h('td', {}, fmtFecha(c.fechaApertura)), h('td', {}, c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
-          h('td', {}, h('span', { class: 'pill ' + (c.estado === 'abierto' ? 'st' : c.estado === 'anulado' ? 'baja' : 'op') }, c.estado)), h('td', { class: 'muted' }, c.ingenieroAsignado || '—')))))) : h('div', { class: 'empty' }, 'Sin ciclos')));
-  }
-  function tabPendientes(eq) {
-    const all = H.pendientesDe(eq.inv).slice().sort((a, b) => (a.estado === 'cerrado') - (b.estado === 'cerrado') || (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
-    const nAct = all.filter(p => p.estado !== 'cerrado').length, nRes = all.filter(p => p.estado === 'cerrado').length;
-    let filtro = 'activos';   // activos | resueltos | todos
-    const body = h('div', { class: 's-bd flush' });
-    const sub = h('span', { class: 's-sub' });
-    function lista() {
-      if (filtro === 'resueltos') return all.filter(p => p.estado === 'cerrado');
-      if (filtro === 'todos') return all;
-      return all.filter(p => p.estado !== 'cerrado');
-    }
-    function render() {
-      const ps = lista();
-      sub.textContent = `${nAct} activo(s) · ${nRes} resuelto(s)`;
-      mount(body, ps.length ? h('div', { class: 'p-list' }, ...ps.map(pendienteCard))
-        : h('div', { class: 'empty' }, filtro === 'resueltos' ? 'Sin pendientes resueltos' : filtro === 'activos' ? 'Sin pendientes activos' : 'Sin pendientes'));
-    }
-    const seg = h('div', { class: 'seg' }, ...[['activos', `Activos${nAct ? ' · ' + nAct : ''}`], ['resueltos', `Resueltos${nRes ? ' · ' + nRes : ''}`], ['todos', 'Todos']].map(([v, l]) =>
-      h('button', { class: filtro === v ? 'on' : '', onclick: e => { filtro = v;[...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
-    render();
-    return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), sub, h('div', { class: 'tb-spacer' }), seg,
-      h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')), body);
-  }
   function pendienteCard(p) {
     const resuelto = p.estado === 'cerrado';
     const venc = p.fechaComp && p.fechaComp < H.hoyLocal() && !resuelto;
@@ -3172,49 +3281,43 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         p.fechaComp ? h('span', {}, 'Compromiso ' + fmtFecha(p.fechaComp)) : null,
         resuelto && p.fechaCierre ? h('span', {}, 'Resuelto ' + fmtFecha(p.fechaCierre)) : null));
   }
-  function tabConflictos(eq) {
-    const cs = H.conflictosDe(eq.inv);
-    if (!cs.length) return h('div', { class: 'empty' }, 'Sin conflictos pendientes con el maestro');
-    return h('div', { class: 'row-list' }, ...cs.map(c => conflictoRow(c)));
-  }
-  // Reúne las entradas de auditoría que afectan a un equipo (equipo + sus eventos,
-  // pendientes, tareas y ciclos) y las muestra como historial de cambios.
-  function auditoriaDe(eq) {
+  // Historial de cambios global (auditoría). Acceso discreto desde Configuración.
+  function formHistorialCambios() {
     const S = H.getState();
-    const evIds = new Set(S.eventos.filter(e => e.inv === eq.inv).map(e => e.id));
-    const pendIds = new Set(S.pendientes.filter(p => p.inv === eq.inv).map(p => p.id));
-    const tareaIds = new Set(S.tareas.filter(t => pendIds.has(t.pendId)).map(t => t.id));
-    const folios = new Set(S.ciclos.filter(c => c.inv === eq.inv).map(c => c.folio));
-    return (S.audit || []).filter(a =>
-      (a.entidad === 'equipo' && a.idEnt === eq.inv) ||
-      (a.entidad === 'evento' && evIds.has(a.idEnt)) ||
-      (a.entidad === 'pendiente' && pendIds.has(a.idEnt)) ||
-      (a.entidad === 'tarea' && tareaIds.has(a.idEnt)) ||
-      (a.entidad === 'ciclo' && folios.has(a.idEnt))
-    ).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  }
-  function tabAuditoria(eq) {
-    const all = auditoriaDe(eq);
+    const all = (S.audit || []).slice().sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
     const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo' };
     const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
     const v = x => (x === null || x === undefined || x === '') ? '—' : (x === false ? 'No' : x === true ? 'Sí' : String(x));
-    let desde = '', hasta = '';
-    const body = h('div', { class: 's-bd flush' }); const cnt = h('span', { class: 's-sub' });
+    let q = '', desde = '', hasta = '';
+    const body = h('div', {}); const cnt = h('span', { class: 's-sub' });
     function render() {
-      const list = all.filter(a => { const d = (a.ts || '').slice(0, 10); return (!desde || d >= desde) && (!hasta || d <= hasta); });
+      const ql = q.trim().toLowerCase();
+      const list = all.filter(a => {
+        const d = (a.ts || '').slice(0, 10);
+        if (desde && d < desde) return false; if (hasta && d > hasta) return false;
+        if (ql) { const blob = [a.entidad, a.idEnt, a.campo, a.valorAnterior, a.valorNuevo, a.usuario].map(x => String(x == null ? '' : x)).join(' ').toLowerCase(); if (!blob.includes(ql)) return false; }
+        return true;
+      });
       cnt.textContent = `${list.length} registro(s)`;
       mount(body, list.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Fecha / hora'), h('th', {}, 'Entidad'), h('th', {}, 'Campo'), h('th', {}, 'Antes'), h('th', {}, 'Después'), h('th', {}, 'Usuario'))),
-        h('tbody', {}, ...list.slice(0, 500).map(a => h('tr', {},
-          h('td', { class: 'muted' }, fhora(a.ts)), h('td', {}, h('span', { class: 'tag' }, ENT[a.entidad] || a.entidad)),
-          h('td', {}, a.campo || '—'), h('td', { class: 'muted' }, v(a.valorAnterior)), h('td', {}, v(a.valorNuevo)), h('td', { class: 'muted' }, a.usuario || '—')))))) : h('div', { class: 'empty' }, 'Sin cambios en el rango'));
+        h('thead', {}, h('tr', {}, h('th', {}, 'Fecha / hora'), h('th', {}, 'Entidad'), h('th', {}, 'ID'), h('th', {}, 'Campo'), h('th', {}, 'Antes'), h('th', {}, 'Después'), h('th', {}, 'Usuario'))),
+        h('tbody', {}, ...list.slice(0, 800).map(a => h('tr', {},
+          h('td', { class: 'muted nowrap' }, fhora(a.ts)), h('td', {}, h('span', { class: 'tag' }, ENT[a.entidad] || a.entidad)),
+          h('td', { class: 'mono' }, capCell(120, String(a.idEnt == null ? '—' : a.idEnt))),
+          h('td', {}, capCell(150, a.campo || '—')), h('td', { class: 'muted' }, capCell(160, v(a.valorAnterior))), h('td', {}, capCell(160, v(a.valorNuevo))), h('td', { class: 'muted' }, a.usuario || '—')))))) : h('div', { class: 'empty' }, 'Sin cambios en el rango'));
     }
     render();
-    return h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Historial de cambios'), cnt, h('div', { class: 'tb-spacer' }),
-        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { desde = e.target.value; render(); } }),
-        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { hasta = e.target.value; render(); } })),
-      body);
+    openDrawer({
+      title: 'Historial de cambios', wide: true,
+      body: h('div', {},
+        h('div', { class: 'filterbar' },
+          h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { q = e.target.value; render(); } }),
+          h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Desde'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { desde = e.target.value; render(); } }),
+          h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { hasta = e.target.value; render(); } }),
+          h('div', { class: 'tb-spacer' }), cnt),
+        body),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cerrar')]
+    });
   }
 
   // ---- PENDIENTES ---------------------------------------------------------
@@ -3748,28 +3851,41 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // ============================ FORMS (drawer) ==============================
   function formMP(inv, fechaDefault) {
     const eq = H.findEquipo(inv); if (!eq) return;
-    const fecha = h('input', { type: 'date', value: fechaDefault || H.hoyLocal() });
-    const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], H.getPref('ultimoResultadoMP', 'Si'));
-    const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], H.getPref('ultimoEjecutor', ''));
-    const obs = h('textarea', { placeholder: 'Observación (opcional)' });
-    const estadoSi = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo');
+    // Si ya existe una MP en ese mes, se EDITA (corrige) en vez de crear una nueva (evita duplicar).
+    const fechaDef = fechaDefault || H.hoyLocal();
+    const dRef = new Date(fechaDef + 'T00:00:00');
+    const evExist = (!isNaN(dRef)) ? H.eventoMPMes(inv, dRef.getFullYear(), dRef.getMonth()) : null;
+    const editar = !!evExist;
+    const fecha = h('input', { type: 'date', value: editar ? (evExist.fecha || fechaDef) : fechaDef });
+    const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], editar ? (evExist.resultado || 'Si') : H.getPref('ultimoResultadoMP', 'Si'));
+    const ejecutor = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], editar ? (evExist.ejecutor || '') : H.getPref('ultimoEjecutor', ''));
+    const obs = h('textarea', { placeholder: 'Observación (opcional)' }, editar ? (evExist.obs || '') : '');
+    const estadoSi = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], editar && evExist.estado === 'no operativo' ? 'no operativo' : 'operativo');
     const estadoAuto = h('input', { type: 'text', readonly: true });
     const estadoWrap = h('div', {}, estadoSi, estadoAuto);
     const sync = () => { const si = resultado.value === 'Si'; estadoSi.style.display = si ? '' : 'none'; estadoAuto.style.display = si ? 'none' : ''; if (!si) estadoAuto.value = H.estadoMPDesdeResultado(resultado.value) || '(sin cambio de estado)'; };
     resultado.onchange = sync; sync();
     const save = () => {
-      let r = H.registrarMP({ inv, fecha: fecha.value, resultado: resultado.value, ejecutor: ejecutor.value, obs: obs.value, estadoSi: estadoSi.value });
-      if (!r.ok && r.requiereConfirmacion) { if (window.confirm(r.aviso)) r = H.registrarMP({ inv, fecha: fecha.value, resultado: resultado.value, ejecutor: ejecutor.value, obs: obs.value, estadoSi: estadoSi.value, forzarSinProg: true }); else return; }
+      const d = { inv, fecha: fecha.value, resultado: resultado.value, ejecutor: ejecutor.value, obs: obs.value, estadoSi: estadoSi.value };
+      if (editar) {
+        const r = H.corregirMP(evExist, d);
+        if (!r.ok) return toast(r.error, 'error');
+        toast(`MP actualizada · ${inv} · ${r.evento.resultado}`, 'success'); closeDrawer(); return;
+      }
+      let r = H.registrarMP(d);
+      if (!r.ok && r.requiereConfirmacion) { if (window.confirm(r.aviso)) r = H.registrarMP({ ...d, forzarSinProg: true }); else return; }
       if (!r.ok) return toast(r.error, 'error');
       toast(`MP registrada · ${inv} · ${r.evento.resultado}`, 'success'); closeDrawer();
     };
     openDrawer({
-      title: `MP rápida · ${eq.inv}`, focus: 'select',
+      title: (editar ? 'Editar MP · ' : 'MP rápida · ') + eq.inv, focus: 'select',
       body: h('div', {}, eqMini(eq),
         h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado resultante', estadoWrap)),
         field('Ejecutor', ejecutor), field('Observación', obs),
-        h('div', { class: 'notice' }, 'Se guarda como borrador. Recuerda el último ejecutor/resultado para los próximos registros.')),
-      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: save }, 'Guardar MP')]
+        h('div', { class: 'notice' + (editar ? ' info' : '') }, editar
+          ? 'Editas la MP ya registrada de este mes: cambia el resultado (p. ej. C6 → C3) y se recalcula el estado del equipo.'
+          : 'Se guarda como borrador. Recuerda el último ejecutor/resultado para los próximos registros.')),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: save }, editar ? 'Guardar cambios' : 'Guardar MP')]
     });
   }
   // Sube un archivo a Drive (carpeta del equipo) vía Apps Script. Devuelve {id,name,url,...}.
@@ -4191,7 +4307,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Equipos en servicio técnico · Equipos no operativos.'],
+        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos.'],
         ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
         ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
@@ -4239,6 +4355,18 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       name: 'Bitácora', hidden: false, rows: [
         ['ID_BITACORA', 'Fecha del evento', 'Fecha registro', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe Folio Solicitud de trabajo', 'N° Envío', 'N° OC', 'N° Cotización', 'Empresa', 'Técnico', 'Observación', 'Oficial'],
         ...S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.id - a.id)).map(e => [e.id, fF(e.fecha), fF(e.fechaReg), e.inv, e.equipo || eqNom(e.inv), e.servicio || eqSrv(e.inv), H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.nEnvio || '', e.nOC || '', e.nCotiz || '', e.empresa || '', e.tecnico || '', e.obs || '', e.oficial || 'No'])
+      ]
+    });
+
+    // REGISTRO — todos los eventos por FECHA Y HORA DE CREACIÓN (lo último capturado arriba).
+    const tsKey = e => e.ts || (e.fechaReg ? e.fechaReg + 'T00:00:00' : (e.fecha ? e.fecha + 'T00:00:00' : ''));
+    const creado = e => { if (e.ts) { const d = new Date(e.ts); if (!isNaN(d)) return d.toLocaleString('es-CL'); } return fF(e.fechaReg) || fF(e.fecha) || ''; };
+    sheets.push({
+      name: 'Registro', hidden: false, rows: [
+        ['Creado', 'ID_BITACORA', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe / Folio', 'Observación'],
+        ...S.eventos.filter(e => !e.anulado)
+          .slice().sort((a, b) => (tsKey(b)).localeCompare(tsKey(a)) || (b.id - a.id))
+          .map(e => [creado(e), e.id, e.inv, e.equipo || eqNom(e.inv), H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.obs || ''])
       ]
     });
 
@@ -4318,7 +4446,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('button', { class: 'btn', onclick: () => { const n = nBorr(); if (!n) return toast('No hay borradores', 'success'); if (!window.confirm(`¿Oficializar ${n} evento(s) en borrador?`)) return; H.oficializarTodosBorradores(); H.save(); toast(`${n} eventos oficializados`, 'success'); renderMaint(); refreshChrome(); } }, `Oficializar borradores (${nBorr()})`),
       h('button', { class: 'btn', onclick: () => go('eventos', { dup: 1 }) }, `Ver MP duplicadas (${nDup()})`),
       h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
-      h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos')));
+      h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos'),
+      h('button', { class: 'btn ghost', title: 'Auditoría: quién cambió qué y cuándo', onclick: () => formHistorialCambios() }, 'Historial de cambios')));
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));

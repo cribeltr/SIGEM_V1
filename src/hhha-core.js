@@ -1173,6 +1173,71 @@
     return { ok: true, evento: ev };
   }
 
+  // Corrige EN SITIO una MP ya registrada (p. ej. C6 → C3): revierte los efectos
+  // del resultado/fecha anteriores, aplica los nuevos y recalcula el estado del
+  // equipo. Mantiene un único evento (no duplica). d = {resultado, fecha?, ejecutor?, obs?, estadoSi?}.
+  function corregirMP(ev, d) {
+    if (!ev || ev.anulado) return { ok: false, error: 'Evento no editable' };
+    if (ev.tipo !== 'Mantención preventiva') return { ok: false, error: 'No es una mantención preventiva' };
+    const eq = findEquipo(ev.inv);
+    if (!eq) return { ok: false, error: 'Equipo no encontrado' };
+    if (!d.resultado) return { ok: false, error: 'Selecciona un resultado' };
+    const nuevaFecha = d.fecha || ev.fecha;
+    if (!nuevaFecha) return { ok: false, error: 'Fecha requerida' };
+
+    // 1) Revertir los efectos del resultado/fecha anteriores.
+    revertirEfectosMP(ev);
+    // 2) Aplicar los nuevos valores al evento.
+    if (d.resultado !== ev.resultado) audit('evento', ev.id, 'resultado', ev.resultado, d.resultado);
+    if (nuevaFecha !== ev.fecha) audit('evento', ev.id, 'fecha', ev.fecha, nuevaFecha);
+    ev.resultado = d.resultado;
+    ev.fecha = nuevaFecha;
+    if (d.ejecutor !== undefined && d.ejecutor !== '') ev.ejecutor = d.ejecutor;
+    if (d.obs !== undefined) ev.obs = d.obs || null;
+    ev.estado = estadoMPFinal(d.resultado, d.estadoSi);
+    ev.ts = new Date().toISOString();
+    // 3) Re-aplicar efectos (R del mes, pendientes por causal, marca R del mes siguiente) y recalcular estado.
+    aplicarEfectosEvento(ev);
+    recalcEstadoEquipo(eq);
+    if (d.ejecutor) setPref('ultimoEjecutor', d.ejecutor);
+    setPref('ultimoResultadoMP', d.resultado);
+    save();
+    return { ok: true, evento: ev };
+  }
+
+  // Revierte los efectos colaterales de una MP (R del mes, marca R del mes
+  // siguiente por causal y pendientes automáticos derivados del evento).
+  // NO toca el estado del equipo: el llamador recalcula con recalcEstadoEquipo.
+  function revertirEfectosMP(ev) {
+    const eq = findEquipo(ev.inv);
+    if (!eq || !ev.fecha) return;
+    const [y, m] = ev.fecha.split('-').map(Number);
+    const mes = MESES[m - 1];
+    // Pendientes automáticos creados por este evento (reprogramación / localizar): se anulan si siguen abiertos.
+    state.pendientes.forEach(p => {
+      if (p.eventoOrigen === ev.id && !p.anulado && p.origen === 'auto_mp_causal' && p.estado !== 'cerrado') {
+        p.anulado = true; p.fechaAnulacion = new Date().toISOString(); p.motivoAnulacion = 'Corrección de la MP de origen';
+        audit('pendiente', p.id, 'anulado', false, true);
+      }
+    });
+    // Marca 'R' del mes siguiente, si la dejó un causal C1–C8 y sigue intacta.
+    if (/^C[1-8]$/.test(ev.resultado || '') && m < 12) {
+      const ms = MESES[m];
+      if (eq.registro && eq.registro[ms] && eq.registro[ms].P === 'R') {
+        delete eq.registro[ms].P;
+        if (Object.keys(eq.registro[ms]).length === 0) delete eq.registro[ms];
+      }
+    }
+    // R del mes: recomputar desde otras MP no anuladas del mismo mes (igual que en la anulación).
+    if (eq.registro && eq.registro[mes]) {
+      const otras = state.eventos.filter(x => x.id !== ev.id && !x.anulado && x.inv === ev.inv &&
+        x.tipo === 'Mantención preventiva' && x.fecha && x.resultado &&
+        x.fecha.startsWith(`${y}-${String(m).padStart(2, '0')}`)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+      if (otras.length) eq.registro[mes].R = otras[0].resultado;
+      else { delete eq.registro[mes].R; if (Object.keys(eq.registro[mes]).length === 0) delete eq.registro[mes]; }
+    }
+  }
+
   // Registro masivo de MPs. (Núcleo de la antigua "mpMasiva".)
   // d = {invs, fecha, resultado, ejecutor, obs, estadoSi, omitirDuplicados=true}
   function registrarMPMasiva(d) {
@@ -1805,7 +1870,7 @@
     parsearHojaRegistro, compararMaestro, registrarOActualizarConflicto,
     resolverConflicto, nombreCampoConflicto,
     // operaciones MP
-    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, registrarMPMasiva,
+    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, corregirMP, registrarMPMasiva,
     // operaciones eventos
     crearEvento, docsEsperadosEvento, oficializarEvento, editarEvento, anularEvento,
     // operaciones pendientes / baja
