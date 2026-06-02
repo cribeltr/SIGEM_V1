@@ -2379,7 +2379,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b21';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b22';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2587,67 +2587,155 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     return root;
   };
 
-  // ---- TABLERO (Kanban "Equipos por estado", arrastrar y soltar) ----------
+  // ---- TABLERO (Kanban con 3 modos: por estado · pendientes · correctivos) -
+  const TB_COLOR = { operativo: 'var(--op)', no_operativo: 'var(--noop)', en_servicio_tecnico: 'var(--st)', baja: 'var(--baja)' };
+  // Tarjeta arrastrable genérica. inner=nodos hijos · dragId=id para el drop · onClick · color de borde.
+  function kbCard(inner, dragId, onClick, borderColor) {
+    const c = h('div', { class: 'kb-card', draggable: 'true', style: borderColor ? { borderLeftColor: borderColor } : null }, ...inner.filter(Boolean));
+    c.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', String(dragId)); ev.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
+    c.addEventListener('dragend', () => c.classList.remove('dragging'));
+    if (onClick) c.addEventListener('click', onClick);
+    return c;
+  }
+  // Columna con cabecera (punto+label+conteo), lista de tarjetas y zona de drop.
+  function kbCol(label, color, count, cards, onDrop, extra) {
+    const col = h('div', { class: 'kb-col' },
+      h('div', { class: 'kb-hd' }, h('span', { class: 'dot', style: { background: color } }), label, h('span', { class: 'cnt' }, count)),
+      h('div', { class: 'kb-list' }, ...(cards.length ? cards : [h('div', { class: 'kb-empty' }, 'Sin tarjetas')]), extra || null));
+    if (onDrop) {
+      col.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop-ok'); });
+      col.addEventListener('dragleave', ev => { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop-ok'); });
+      col.addEventListener('drop', ev => { ev.preventDefault(); col.classList.remove('drop-ok'); onDrop(ev.dataTransfer.getData('text/plain')); });
+    }
+    return col;
+  }
+
   VIEWS.tablero = function () {
+    let modo = params.board || 'estado';
+    const content = h('div', {});
+    const paint = () => mount(content, modo === 'pendientes' ? boardPendientes() : modo === 'correctivos' ? boardCorrectivos() : boardEstado());
+    const seg = h('div', { class: 'seg' }, ...[['estado', 'Por estado'], ['pendientes', 'Pendientes'], ['correctivos', 'Correctivos']].map(([v, l]) =>
+      h('button', { class: modo === v ? 'on' : '', onclick: e => { if (modo === v) return; modo = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); paint(); } }, l)));
+    paint();
+    return h('div', {}, h('div', { class: 'filterbar', style: { paddingBottom: '4px' } }, h('span', { class: 'faint', style: { fontSize: '11px', fontWeight: '700', letterSpacing: '.3px' } }, 'TABLERO'), seg), content);
+  };
+
+  // Board 1 · Equipos por estado (arrastrar abre el evento que produce ese estado).
+  function boardEstado() {
     const S = H.getState();
-    let q = (params.q || '').toLowerCase();
-    let servicio = params.servicio || '';
-    const CAP = 80;
-    // Cada columna = un estado + el tipo de evento que lo produce (al soltar se abre ese
-    // formulario; el estado NO se fija a mano, se deriva del evento → queda registrado).
+    let q = '', servicio = '', orden = 'dias', verOp = true;
     const COLS = [
-      { estado: 'no_operativo', label: 'No operativo', color: 'var(--noop)', tipo: 'Solicitud de trabajo' },
-      { estado: 'en_servicio_tecnico', label: 'En servicio técnico', color: 'var(--st)', tipo: 'Envío a servicio técnico' },
-      { estado: 'operativo', label: 'Operativo', color: 'var(--op)', tipo: 'Reparación' }
+      { estado: 'no_operativo', label: 'No operativo', tipo: 'Solicitud de trabajo' },
+      { estado: 'en_servicio_tecnico', label: 'En servicio técnico', tipo: 'Envío a servicio técnico' },
+      { estado: 'operativo', label: 'Operativo', tipo: 'Reparación' }
     ];
-    const colorDe = est => (COLS.find(c => c.estado === est) || { color: 'var(--baja)' }).color;
+    const CAP = 80;
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
     const board = h('div', { class: 'kb-board' });
-    const match = e => (!servicio || e.servicio === servicio) &&
-      (!q || (e.inv || '').toLowerCase().includes(q) || (e.equipo || '').toLowerCase().includes(q) || (e.servicio || '').toLowerCase().includes(q));
-
-    function card(e) {
-      const c = h('div', { class: 'kb-card', draggable: 'true', style: { borderLeftColor: colorDe(e.estado) } },
-        h('div', { class: 'kb-inv' }, e.inv),
-        h('div', { class: 'kb-eq' }, e.equipo || '—'),
-        h('div', { class: 'kb-meta' },
-          h('span', {}, e.servicio || '—'),
-          e.estado !== 'operativo' ? h('span', {}, h('b', {}, H.diasEnEstado(e)), ' d') : null,
-          H.encargadoDe(e) ? h('span', {}, H.encargadoDe(e)) : null));
-      c.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', e.inv); ev.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
-      c.addEventListener('dragend', () => c.classList.remove('dragging'));
-      c.addEventListener('click', () => go('equipo', { inv: e.inv }));
-      return c;
-    }
-    function buildCol(col) {
-      const list = S.equipos.filter(e => e.estado === col.estado && match(e));
-      list.sort(col.estado === 'operativo' ? (a, b) => (a.inv || '').localeCompare(b.inv || '') : (a, b) => H.diasEnEstado(b) - H.diasEnEstado(a));
-      const total = list.length, shown = list.slice(0, CAP);
-      const colEl = h('div', { class: 'kb-col' },
-        h('div', { class: 'kb-hd' }, h('span', { class: 'dot', style: { background: col.color } }), col.label, h('span', { class: 'cnt' }, total)),
-        h('div', { class: 'kb-list' },
-          ...(shown.length ? shown.map(card) : [h('div', { class: 'kb-empty' }, 'Sin equipos')]),
-          total > CAP ? h('div', { class: 'kb-more' }, `+${total - CAP} más · usa el buscador o filtra por servicio`) : null));
-      colEl.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; colEl.classList.add('drop-ok'); });
-      colEl.addEventListener('dragleave', ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove('drop-ok'); });
-      colEl.addEventListener('drop', ev => {
-        ev.preventDefault(); colEl.classList.remove('drop-ok');
-        const inv = ev.dataTransfer.getData('text/plain'), eq = H.findEquipo(inv);
-        if (!eq || eq.estado === col.estado) return;   // misma columna o equipo inválido
-        formNuevoEvento({ inv: eq.inv, tipo: col.tipo });
+    const gf = e => { const g = H.ultimaGestion(e.inv); return g ? g.fecha : ''; };
+    const match = e => (!servicio || e.servicio === servicio) && (!q || (e.inv || '').toLowerCase().includes(q) || (e.equipo || '').toLowerCase().includes(q) || (e.servicio || '').toLowerCase().includes(q));
+    const card = e => kbCard([
+      h('div', { class: 'kb-inv' }, e.inv),
+      h('div', { class: 'kb-eq' }, e.equipo || '—'),
+      h('div', { class: 'kb-meta' }, h('span', {}, e.servicio || '—'),
+        e.estado !== 'operativo' ? h('span', {}, h('b', {}, H.diasEnEstado(e)), ' d') : null,
+        H.encargadoDe(e) ? h('span', {}, H.encargadoDe(e)) : null)
+    ], e.inv, () => go('equipo', { inv: e.inv }), TB_COLOR[e.estado]);
+    function render() {
+      board.innerHTML = '';
+      COLS.forEach(col => {
+        if (col.estado === 'operativo' && !verOp) return;
+        const list = S.equipos.filter(e => e.estado === col.estado && match(e));
+        list.sort(col.estado !== 'operativo' && orden === 'gestion' ? (a, b) => gf(a).localeCompare(gf(b))
+          : col.estado === 'operativo' ? (a, b) => (a.inv || '').localeCompare(b.inv || '') : (a, b) => H.diasEnEstado(b) - H.diasEnEstado(a));
+        const total = list.length;
+        const cards = list.slice(0, CAP).map(card);
+        const more = total > CAP ? h('div', { class: 'kb-more' }, `+${total - CAP} más · filtra para acotar`) : null;
+        board.appendChild(kbCol(col.label, TB_COLOR[col.estado], total, cards, inv => { const eq = H.findEquipo(inv); if (eq && eq.estado !== col.estado) formNuevoEvento({ inv, tipo: col.tipo }); }, more));
       });
-      return colEl;
     }
-    function render() { board.innerHTML = ''; COLS.forEach(col => board.appendChild(buildCol(col))); }
     render();
     return h('div', {},
       h('div', { class: 'filterbar' },
-        h('input', { type: 'search', placeholder: 'Buscar inv, equipo, servicio…', value: q, oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
-        selectEl([['', 'Todos los servicios'], ...servicios.map(s => [s, s])], servicio, { onchange: e => { servicio = e.target.value; render(); } }),
+        h('input', { type: 'search', placeholder: 'Buscar inv, equipo, servicio…', oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
+        selectEl([['', 'Todos los servicios'], ...servicios.map(s => [s, s])], '', { onchange: e => { servicio = e.target.value; render(); } }),
+        selectEl([['dias', 'Orden: días en estado'], ['gestion', 'Orden: más abandonado']], 'dias', { onchange: e => { orden = e.target.value; render(); } }),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: true, onchange: e => { verOp = e.target.checked; render(); } }), 'Ver operativos'),
         h('div', { class: 'tb-spacer' }),
-        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra una tarjeta a otra columna para registrar el cambio de estado')),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra a otra columna para registrar el cambio')),
       board);
-  };
+  }
+
+  // Board 2 · Pendientes por estado (arrastrar cambia el estado directo).
+  function boardPendientes() {
+    const S = H.getState();
+    let q = '';
+    const COLS = [['no_iniciado', 'No iniciado', 'var(--noop)'], ['en_proceso', 'En proceso', 'var(--st)'], ['cerrado', 'Resuelto', 'var(--op)']];
+    const board = h('div', { class: 'kb-board' });
+    const match = p => !q || (p.inv || '').toLowerCase().includes(q) || (p.equipo || '').toLowerCase().includes(q) || (p.desc || '').toLowerCase().includes(q) || (p.ejecutor || '').toLowerCase().includes(q);
+    const card = p => {
+      const venc = p.fechaComp && p.estado !== 'cerrado' && p.fechaComp < H.hoyLocal();
+      return kbCard([
+        h('div', { class: 'kb-inv' }, p.inv + ' · ' + (TIPO_PENDIENTE[p.tipo] || p.tipo)),
+        p.desc ? h('div', { class: 'kb-eq' }, p.desc.slice(0, 70)) : null,
+        h('div', { class: 'kb-meta', style: venc ? { color: 'var(--noop)' } : null },
+          p.ejecutor ? h('span', {}, p.ejecutor) : h('span', { class: 'faint' }, 'sin asignar'),
+          p.fechaComp ? h('span', {}, (venc ? '⚠ ' : '') + fmtFecha(p.fechaComp)) : null)
+      ], p.id, () => formPendiente(p), venc ? 'var(--noop)' : (COLS.find(c => c[0] === p.estado) || [, , 'var(--border-2)'])[2]);
+    };
+    function render() {
+      board.innerHTML = '';
+      COLS.forEach(([est, label, color]) => {
+        const list = S.pendientes.filter(p => !p.anulado && p.estado === est && match(p)).sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
+        board.appendChild(kbCol(label, color, list.length, list.map(card), id => {
+          const p = S.pendientes.find(x => String(x.id) === String(id));
+          if (p && p.estado !== est) { H.cambiarEstadoPend(p, est); toast(`Pendiente → ${label}`, 'success'); }
+        }));
+      });
+    }
+    render();
+    return h('div', {},
+      h('div', { class: 'filterbar' },
+        h('input', { type: 'search', placeholder: 'Buscar inv, responsable, descripción…', oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo'),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra para cambiar el estado del pendiente')),
+      board);
+  }
+
+  // Board 3 · Correctivos por etapa (cada tarjeta = ciclo abierto; arrastrar abre el evento de esa etapa).
+  function boardCorrectivos() {
+    const S = H.getState();
+    const FASES = [['Solicitud de trabajo', 'Solicitud'], ['Visita técnica', 'Visita'], ['Orden de Compra', 'O. Compra'], ['Envío a servicio técnico', 'Envío'], ['Recepción', 'Recepción'], ['Reparación', 'Reparación']];
+    const board = h('div', { class: 'kb-board' });
+    const abiertos = S.ciclos.filter(c => c.estado === 'abierto');
+    const faseActual = c => {
+      const evs = S.eventos.filter(e => !e.anulado && FASES.some(f => f[0] === e.tipo) && (c.folio ? e.folio === c.folio : e.inv === c.inv));
+      if (!evs.length) return 'Solicitud de trabajo';
+      evs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.id - b.id));
+      return evs[evs.length - 1].tipo;
+    };
+    const card = c => { const eq = H.findEquipo(c.inv) || {}; return kbCard([
+      h('div', { class: 'kb-inv' }, c.folio || ('#' + c.id)),
+      h('div', { class: 'kb-eq' }, c.inv + ' · ' + (eq.equipo || '—')),
+      h('div', { class: 'kb-meta' }, h('span', {}, eq.servicio || '—'),
+        h('span', {}, h('b', {}, H.diasEntreFechas(c.fechaApertura, H.hoyLocal())), ' d abierto'),
+        c.ingenieroAsignado ? h('span', {}, c.ingenieroAsignado) : null)
+    ], c.folio || ('#' + c.id), () => go('equipo', { inv: c.inv, tab: 'ciclos' }), 'var(--st)'); };
+    function render() {
+      board.innerHTML = '';
+      const byFase = {}; FASES.forEach(f => byFase[f[0]] = []);
+      abiertos.forEach(c => { const f = faseActual(c); (byFase[f] || byFase['Solicitud de trabajo']).push(c); });
+      FASES.forEach(([tipo, label]) => board.appendChild(kbCol(label, 'var(--st)', byFase[tipo].length, byFase[tipo].map(card), id => {
+        const c = abiertos.find(x => (x.folio || ('#' + x.id)) === id);
+        if (c) formNuevoEvento({ inv: c.inv, tipo });
+      })));
+    }
+    render();
+    return h('div', {},
+      h('div', { class: 'filterbar' }, h('span', { class: 'faint', style: { fontSize: '11px' } }, `${abiertos.length} ciclo(s) correctivo(s) abierto(s) · arrastra una tarjeta a una etapa para registrar ese evento`)),
+      board);
+  }
   function pendCard(p) {
     const venc = p.fechaComp && p.fechaComp < H.hoyLocal();
     return h('div', { class: 'wl-item ' + (venc ? 'sev-hi' : p.estado === 'en_proceso' ? 'sev-med' : ''), onclick: () => formPendiente(p) },

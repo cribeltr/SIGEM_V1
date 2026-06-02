@@ -47,11 +47,16 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
   ordenable por **días en estado** o **días sin gestión**) + pendientes accionables.
 - **Equipos** — tabla densa filtrable (estado/servicio/familia/búsqueda), selección
   múltiple → **registrar MP** en lote, columna "MP del mes".
-- **Tablero** — Kanban **por estado** (No operativo · En servicio técnico · Operativo) con
-  **arrastrar y soltar**: al soltar una tarjeta en otra columna se abre el formulario del
-  evento que produce ese estado (Solicitud → no operativo, Envío → servicio técnico,
-  Reparación → operativo), así el cambio queda registrado. Filtro por búsqueda/servicio;
-  columnas con scroll independiente.
+- **Tablero** — Kanban con tres modos conmutables (**arrastrar y soltar** con mouse):
+  - **Por estado** (No operativo · En servicio técnico · Operativo): soltar una tarjeta en
+    otra columna abre el evento que produce ese estado (Solicitud → no operativo, Envío →
+    servicio técnico, Reparación → operativo). Filtro por búsqueda/servicio, orden por días
+    en estado o "más abandonado" (última gestión), y toggle para ocultar operativos.
+  - **Pendientes** (No iniciado · En proceso · Resuelto): arrastrar **cambia el estado** del
+    pendiente directo. Botón "Nuevo".
+  - **Correctivos por etapa** (Solicitud → Visita → O. Compra → Envío → Recepción →
+    Reparación): cada tarjeta es un ciclo abierto en su fase actual; arrastrarla a una etapa
+    abre ese evento. Ves el pipeline de reparaciones de un vistazo.
 - **Equipo (ficha)** — cabecera con estado + datos; pestañas **Resumen · Matriz MP ·
   Bitácora · Ciclos · Pendientes · Conflictos**. Acciones: MP rápida, nuevo evento,
   pendiente, dar de baja. La **Matriz MP** es editable por celda (click → registra MP)
