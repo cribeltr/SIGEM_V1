@@ -2441,7 +2441,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-02 · v1.0';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-02 · v1.1';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2575,6 +2575,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       alert(pct >= 100 ? 'lo' : pct >= 50 ? 'med' : 'hi', pct + '%', 'MP del mes', () => go('asignaciones'), mpEjec.length + '/' + mpProg.length + ' ejecutadas'),
       alert('hi', mpAtras.length, 'MP atrasadas', () => go('equipos', { mpAtras: 1 }), 'meses previos'),
       alert('lo', ciclosAb.length, 'Ciclos abiertos', () => go('ciclos', { estado: 'abierto' }), 'correctivos en curso'),
+      alert(ciclosAb.filter(cicloEstancado).length ? 'hi' : 'lo', ciclosAb.filter(cicloEstancado).length, 'Correctivos estancados', () => go('tablero', { board: 'correctivos' }), 'mucho tiempo en una etapa'),
       alert(reprogPend.length ? 'med' : 'lo', reprogPend.length, 'Reprogramaciones', () => go('pendientes', { tipo: 'reprogramacion' }), 'MP por reprogramar'),
       alert(recordHoy.length ? 'med' : 'lo', recordHoy.length, 'Recordatorios hoy', () => go('pendientes', { record: 1 }), 'seguimientos para hoy'),
       alert('lo', sinProgMP.length, 'Sin programación MP', () => go('equipos', { sinProg: 1 }), 'equipos sin MP anual'),
@@ -2809,36 +2810,61 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
 
   // Board 3 · Correctivos por etapa (cada tarjeta = ciclo abierto; arrastrar abre el evento de esa etapa).
+  // --- Pipeline correctivo: fases, umbrales de estancamiento y siguiente paso ---
+  const FASES_CORR = [['Solicitud de trabajo', 'Solicitud'], ['Visita técnica', 'Visita'], ['Orden de Compra', 'O. Compra'], ['Envío a servicio técnico', 'Envío'], ['Recepción', 'Recepción'], ['Reparación', 'Reparación']];
+  const FASE_UMBRAL = { 'Solicitud de trabajo': 3, 'Visita técnica': 5, 'Orden de Compra': 10, 'Envío a servicio técnico': 15, 'Recepción': 3, 'Reparación': 5 };
+  const FASE_SIGUIENTE = { 'Solicitud de trabajo': 'Visita técnica', 'Visita técnica': 'Orden de Compra', 'Orden de Compra': 'Envío a servicio técnico', 'Envío a servicio técnico': 'Recepción', 'Recepción': 'Reparación', 'Reparación': null };
+  function faseDeCiclo(c) {
+    const evs = H.getState().eventos.filter(e => !e.anulado && FASE_UMBRAL[e.tipo] !== undefined && (c.folio ? e.folio === c.folio : e.inv === c.inv));
+    if (!evs.length) return { tipo: 'Solicitud de trabajo', fecha: c.fechaApertura };
+    evs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.id - b.id));
+    const last = evs[evs.length - 1];
+    return { tipo: last.tipo, fecha: last.fecha || c.fechaApertura };
+  }
+  function diasEtapaCiclo(c) { return H.diasEntreFechas(faseDeCiclo(c).fecha, H.hoyLocal()); }
+  function cicloEstancado(c) { return diasEtapaCiclo(c) > (FASE_UMBRAL[faseDeCiclo(c).tipo] || 7); }
+
   function boardCorrectivos() {
     const S = H.getState();
-    const FASES = [['Solicitud de trabajo', 'Solicitud'], ['Visita técnica', 'Visita'], ['Orden de Compra', 'O. Compra'], ['Envío a servicio técnico', 'Envío'], ['Recepción', 'Recepción'], ['Reparación', 'Reparación']];
     const board = h('div', { class: 'kb-board' });
     const abiertos = S.ciclos.filter(c => c.estado === 'abierto');
-    const faseActual = c => {
-      const evs = S.eventos.filter(e => !e.anulado && FASES.some(f => f[0] === e.tipo) && (c.folio ? e.folio === c.folio : e.inv === c.inv));
-      if (!evs.length) return 'Solicitud de trabajo';
-      evs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.id - b.id));
-      return evs[evs.length - 1].tipo;
+    const card = c => {
+      const eq = H.findEquipo(c.inv) || {};
+      const f = faseDeCiclo(c), dEtapa = H.diasEntreFechas(f.fecha, H.hoyLocal()), est = dEtapa > (FASE_UMBRAL[f.tipo] || 7);
+      const sig = FASE_SIGUIENTE[f.tipo];
+      return kbCard([
+        h('div', { class: 'kb-inv' }, (est ? '⚠ ' : '') + (c.folio || ('#' + c.id))),
+        h('div', { class: 'kb-eq' }, c.inv + ' · ' + (eq.equipo || '—')),
+        h('div', { class: 'kb-meta' }, h('span', {}, eq.servicio || '—'),
+          h('span', {}, h('b', {}, H.diasEntreFechas(c.fechaApertura, H.hoyLocal())), ' d abierto')),
+        h('div', { class: 'kb-meta' },
+          h('span', { style: est ? { color: 'var(--noop)', fontWeight: '650' } : null }, h('b', {}, dEtapa), ' d en esta etapa' + (est ? ' · estancado' : '')),
+          c.ingenieroAsignado ? h('span', {}, c.ingenieroAsignado) : null),
+        sig
+          ? h('button', { class: 'btn sm', style: { marginTop: '5px' }, title: 'Registrar el siguiente evento del ciclo', onclick: ev => { ev.stopPropagation(); formNuevoEvento({ inv: c.inv, tipo: sig }); } }, '→ ' + sig)
+          : h('button', { class: 'btn sm', style: { marginTop: '5px' }, title: 'Cerrar el ciclo (equipo operativo)', onclick: ev => { ev.stopPropagation(); formNuevoEvento({ inv: c.inv, tipo: 'Reparación', estado: 'operativo' }); } }, '✓ Cerrar (operativo)')
+      ], c.folio || ('#' + c.id), () => go('equipo', { inv: c.inv, tab: 'ciclos' }), est ? 'var(--noop)' : 'var(--st)');
     };
-    const card = c => { const eq = H.findEquipo(c.inv) || {}; return kbCard([
-      h('div', { class: 'kb-inv' }, c.folio || ('#' + c.id)),
-      h('div', { class: 'kb-eq' }, c.inv + ' · ' + (eq.equipo || '—')),
-      h('div', { class: 'kb-meta' }, h('span', {}, eq.servicio || '—'),
-        h('span', {}, h('b', {}, H.diasEntreFechas(c.fechaApertura, H.hoyLocal())), ' d abierto'),
-        c.ingenieroAsignado ? h('span', {}, c.ingenieroAsignado) : null)
-    ], c.folio || ('#' + c.id), () => go('equipo', { inv: c.inv, tab: 'ciclos' }), 'var(--st)'); };
     function render() {
       board.innerHTML = '';
-      const byFase = {}; FASES.forEach(f => byFase[f[0]] = []);
-      abiertos.forEach(c => { const f = faseActual(c); (byFase[f] || byFase['Solicitud de trabajo']).push(c); });
-      FASES.forEach(([tipo, label]) => board.appendChild(kbCol(label, 'var(--st)', byFase[tipo].length, byFase[tipo].map(card), id => {
-        const c = abiertos.find(x => (x.folio || ('#' + x.id)) === id);
-        if (c) formNuevoEvento({ inv: c.inv, tipo });
-      })));
+      const byFase = {}; FASES_CORR.forEach(f => byFase[f[0]] = []);
+      abiertos.forEach(c => { const t = faseDeCiclo(c).tipo; (byFase[t] || byFase['Solicitud de trabajo']).push(c); });
+      FASES_CORR.forEach(([tipo, label]) => {
+        const list = byFase[tipo].sort((a, b) => diasEtapaCiclo(b) - diasEtapaCiclo(a));   // más estancado arriba
+        board.appendChild(kbCol(label, 'var(--st)', list.length, list.map(card), id => {
+          const c = abiertos.find(x => (x.folio || ('#' + x.id)) === id);
+          if (c) formNuevoEvento({ inv: c.inv, tipo });
+        }));
+      });
     }
     render();
+    const nEst = abiertos.filter(cicloEstancado).length;
     return h('div', {},
-      h('div', { class: 'filterbar' }, h('span', { class: 'faint', style: { fontSize: '11px' } }, `${abiertos.length} ciclo(s) correctivo(s) abierto(s) · arrastra una tarjeta a una etapa para registrar ese evento`)),
+      h('div', { class: 'filterbar' },
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, `${abiertos.length} ciclo(s) abierto(s)`),
+        nEst ? h('span', { class: 'pill noop', title: 'Demasiado tiempo en una etapa' }, `${nEst} estancado${nEst > 1 ? 's' : ''}`) : h('span', { class: 'pill op' }, 'al día'),
+        h('div', { class: 'tb-spacer' }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, '"→" registra el siguiente paso · arrastra para mover de etapa')),
       board);
   }
   function mpMesTable(list) {
