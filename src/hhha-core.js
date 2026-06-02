@@ -410,6 +410,24 @@
   function conflictosDe(inv) { return (state.conflictos || []).filter(c => c.inv === inv && (c.estado === 'pendiente' || c.estado === 'pospuesto')); }
   function ciclosDe(inv) { return state.ciclos.filter(c => c.inv === inv); }
   function ciclosAbiertosDe(inv) { return state.ciclos.filter(c => c.inv === inv && c.estado === 'abierto'); }
+  // Última gestión de un equipo: la acción más reciente entre eventos (no anulados) y la
+  // actividad de pendientes (creación, seguimientos, cierre). Devuelve {fecha, texto} o null.
+  function ultimaGestion(inv) {
+    let best = null;
+    const consider = (fecha, texto) => { if (fecha && (!best || fecha > best.fecha)) best = { fecha, texto }; };
+    state.eventos.forEach(e => {
+      if (e.inv !== inv || e.anulado) return;
+      consider(e.fecha, etiquetaTipoEvento(e) + (e.resultado ? ' · ' + e.resultado : ''));
+    });
+    (state.pendientes || []).forEach(p => {
+      if (p.inv !== inv || p.anulado) return;
+      const tip = TIPO_PENDIENTE[p.tipo] || p.tipo;
+      consider(p.fechaCrea, 'Pendiente creado · ' + tip);
+      if (p.fechaCierre) consider(p.fechaCierre, 'Pendiente cerrado · ' + tip);
+      (p.seguimientos || []).forEach(s => consider(s.fecha, 'Seguimiento · ' + (s.texto || tip)));
+    });
+    return best;
+  }
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
     if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
@@ -1735,7 +1753,7 @@
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,

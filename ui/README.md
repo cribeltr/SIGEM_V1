@@ -42,7 +42,9 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
 | `Esc` | Cerrar palette / drawer / popover |
 
 ## Vistas
-- **Cola de trabajo** — alertas + MP del mes (con "MP masiva") + pendientes accionables.
+- **Cola de trabajo** — alertas + MP del mes (con "MP masiva") + panel **Equipos caídos**
+  (no operativos / en servicio técnico, ordenados por días en estado, con la última gestión
+  y los días sin gestión) + pendientes accionables.
 - **Equipos** — tabla densa filtrable (estado/servicio/familia/búsqueda), selección
   múltiple → **registrar MP** en lote, columna "MP del mes".
 - **Equipo (ficha)** — cabecera con estado + datos; pestañas **Resumen · Matriz MP ·
@@ -198,8 +200,8 @@ faltaba** en la UI, sin cambiar el diseño:
   - **Inventario** — catálogo completo con estado, días en estado, encargado y
     pendientes abiertos.
   - **En servicio técnico** / **No operativos** — equipos en ese estado, con días en
-    estado, encargado, pendientes abiertos y el N° de informe/folio y apertura del
-    ciclo correctivo abierto.
+    estado, **última gestión** (fecha + detalle) y **días sin gestión**, encargado,
+    pendientes abiertos y el N° de informe/folio y apertura del ciclo correctivo abierto.
   - **Plan anual MP · año** — P/R (programado/realizado) por mes de cada equipo.
   - **Hoja de ruta · mes** — MP programadas del mes para **imprimir y registrar a
     mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Obs*.

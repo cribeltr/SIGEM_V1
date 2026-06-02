@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b18';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b19';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -209,6 +209,29 @@
       h('div', { class: 's-bd flush' }, mpPend.length ? mpMesTable(mpPend.slice(0, 12)) : h('div', { class: 'empty' }, '✓ Todas las MP del mes registradas'))
     );
     root.appendChild(mpSec);
+
+    // Equipos caídos (no operativos / en servicio técnico): días en estado + última gestión.
+    const caidos = S.equipos.filter(e => e.estado === 'no_operativo' || e.estado === 'en_servicio_tecnico')
+      .map(e => { const g = H.ultimaGestion(e.inv); return { e, dias: H.diasEnEstado(e), g, sinG: g ? H.diasEntreFechas(g.fecha, H.hoyLocal()) : null }; })
+      .sort((a, b) => b.dias - a.dias);
+    const rojo = v => v != null && v > 30 ? { color: 'var(--noop)', fontWeight: '600' } : null;
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Equipos caídos'),
+        h('span', { class: 's-sub' }, `${noop.length} no operativos · ${st.length} en servicio técnico`),
+        h('div', { class: 'tb-spacer' }),
+        caidos.length ? h('button', { class: 'btn sm', onclick: () => go('equipos', { alerta30: 1 }) }, 'Ver +30 días') : null),
+      h('div', { class: 's-bd flush' }, caidos.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {},
+          h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Estado'),
+          h('th', { class: 'num' }, 'Días en estado'), h('th', {}, 'Última gestión'), h('th', { class: 'num' }, 'Días s/gestión'), h('th', {}, 'Detalle'))),
+        h('tbody', {}, ...caidos.map(({ e, dias, g, sinG }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
+          h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
+          h('td', {}, estadoPill(e.estado)),
+          h('td', { class: 'num', style: rojo(dias) }, dias),
+          h('td', {}, g ? fmtFecha(g.fecha) : h('span', { class: 'faint' }, 'sin gestión')),
+          h('td', { class: 'num', style: rojo(sinG) }, sinG == null ? '—' : sinG),
+          h('td', { class: 'muted', title: g ? g.texto : '' }, g ? g.texto : '—'))))))
+        : h('div', { class: 'empty' }, '✓ Sin equipos caídos'))));
 
     // Pendientes accionables
     const grp = (estado, title) => {
@@ -402,9 +425,13 @@
     else if (tab === 'auditoria') mount(body, tabAuditoria(eq));
 
     const dias = H.diasEnEstado(eq);
+    const ug = H.ultimaGestion(eq.inv);
+    const diasSinG = ug ? H.diasEntreFechas(ug.fecha, H.hoyLocal()) : null;
     const banner = (eq.estado !== 'operativo' && eq.estado !== 'baja' && eq.estado !== 'desconocido')
       ? h('div', { class: 'notice ' + (dias > 30 ? 'warn' : 'info'), style: { marginBottom: '12px' } },
-        `Estado: ${ESTADO_LABEL[eq.estado]} hace ${dias} día(s). Encargado: ${H.encargadoDe(eq) || '—'}.` + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
+        `Estado: ${ESTADO_LABEL[eq.estado]} hace ${dias} día(s). Encargado: ${H.encargadoDe(eq) || '—'}.`
+        + (ug ? ` Última gestión: ${fmtFecha(ug.fecha)} (hace ${diasSinG} día(s)) · ${ug.texto}.` : ' Sin gestiones registradas.')
+        + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
       : null;
     return h('div', { class: 'view-narrow' },
       h('div', { class: 'tb-title', style: { marginBottom: '10px', fontSize: '12px' } },
@@ -1526,10 +1553,11 @@
       ]
     });
     // Equipos por estado de atención (servicio técnico / no operativos): vista rápida para seguimiento.
-    const colsEstado = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Días en estado', 'Desde', 'Encargado', 'Pend. abiertos', 'N° Informe / Folio', 'Apertura ciclo'];
+    const colsEstado = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Días en estado', 'Desde', 'Última gestión', 'Días s/gestión', 'Detalle gestión', 'Encargado', 'Pend. abiertos', 'N° Informe / Folio', 'Apertura ciclo'];
     const filasEstado = est => S.equipos.filter(e => e.estado === est).map(e => {
       const ciclo = H.ciclosAbiertosDe(e.inv)[0];
-      return [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', H.diasEnEstado(e), fF(e.estadoDesde), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, ciclo ? (ciclo.folio || '') : '', ciclo ? fF(ciclo.fechaApertura) : ''];
+      const g = H.ultimaGestion(e.inv);
+      return [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', H.diasEnEstado(e), fF(e.estadoDesde), g ? fF(g.fecha) : '', g ? H.diasEntreFechas(g.fecha, hoy) : '', g ? g.texto : '', H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, ciclo ? (ciclo.folio || '') : '', ciclo ? fF(ciclo.fechaApertura) : ''];
     });
     sheets.push({ name: 'En servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
     sheets.push({ name: 'No operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
