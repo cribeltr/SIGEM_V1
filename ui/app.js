@@ -1480,7 +1480,7 @@
         let r = H.crearEvento(d);
         if (!r.ok && r.requiereConfirmacion) { if (window.confirm(r.aviso)) { d.forzarSinProg = true; r = H.crearEvento(d); } else return; }
         if (!r.ok) return toast(r.error, 'error');
-        toast(`Evento "${tipo}" registrado`, 'success'); closeDrawer();
+        toast(r.consolidado ? `MP de ${eq ? eq.inv : invSel} actualizada (ya había un registro de ese mes)` : `Evento "${tipo}" registrado`, 'success'); closeDrawer();
       };
       mount(body,
         field('N° Inventario', h('div', {}, invInput, dl)), eq ? eqMini(eq) : null,
@@ -1984,6 +1984,7 @@
     const renderMaint = () => mount(maint, h('div', { class: 'btn-row' },
       h('button', { class: 'btn', onclick: () => { const n = nBorr(); if (!n) return toast('No hay borradores', 'success'); if (!window.confirm(`¿Oficializar ${n} evento(s) en borrador?`)) return; H.oficializarTodosBorradores(); H.save(); toast(`${n} eventos oficializados`, 'success'); renderMaint(); refreshChrome(); } }, `Oficializar borradores (${nBorr()})`),
       h('button', { class: 'btn', onclick: () => go('eventos', { dup: 1 }) }, `Ver MP duplicadas (${nDup()})`),
+      h('button', { class: 'btn', title: 'Deja una sola MP por equipo y mes (conserva la oficial / más reciente y anula el resto)', onclick: () => { const n = nDup(); if (!n) return toast('No hay MP duplicadas', 'success'); if (!window.confirm(`¿Consolidar las MP duplicadas? Se conservará una por equipo y mes (la oficial o la más reciente) y se anularán las demás.`)) return; const k = H.consolidarMPDuplicadas(); toast(k ? `${k} MP duplicada(s) anulada(s)` : 'Sin duplicadas que consolidar', 'success'); renderMaint(); refreshChrome(); } }, `Quitar MP duplicadas (${nDup()})`),
       h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
       h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos'),
       h('button', { class: 'btn ghost', title: 'Auditoría: quién cambió qué y cuándo', onclick: () => formHistorialCambios() }, 'Historial de cambios')));

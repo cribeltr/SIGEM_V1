@@ -1173,6 +1173,27 @@
     return { ok: true, evento: ev };
   }
 
+  // Limpia MP duplicadas (más de una MP vigente del mismo equipo en el mismo mes,
+  // típicas del bug anterior o de borradores importados sin consolidar): conserva
+  // la "mejor" (oficial > fecha más reciente > id mayor) y ANULA el resto (con
+  // reversión de efectos). Devuelve cuántas anuló.
+  function consolidarMPDuplicadas() {
+    const groups = {};
+    state.eventos.filter(e => !e.anulado && e.tipo === 'Mantención preventiva' && e.fecha).forEach(e => {
+      const d = new Date(e.fecha + 'T00:00:00'); if (isNaN(d)) return;
+      const k = e.inv + '|' + d.getFullYear() + '-' + d.getMonth();
+      (groups[k] = groups[k] || []).push(e);
+    });
+    let anulados = 0;
+    Object.keys(groups).forEach(k => {
+      const g = groups[k]; if (g.length < 2) return;
+      g.sort((a, b) => ((b.oficial === 'Sí') - (a.oficial === 'Sí')) || (b.fecha || '').localeCompare(a.fecha || '') || (b.id - a.id));
+      for (let i = 1; i < g.length; i++) { anularEvento(g[i], 'Consolidación de MP duplicada del mes'); anulados++; }
+    });
+    if (anulados) { state.equipos.forEach(recalcEstadoEquipo); save(); }
+    return anulados;
+  }
+
   // Corrige EN SITIO una MP ya registrada (p. ej. C6 → C3): revierte los efectos
   // del resultado/fecha anteriores, aplica los nuevos y recalcula el estado del
   // equipo. Mantiene un único evento (no duplica). d = {resultado, fecha?, ejecutor?, obs?, estadoSi?}.
@@ -1297,6 +1318,25 @@
     const eq = findEquipo(d.inv);
     if (!eq) return { ok: false, error: 'Equipo no encontrado' };
     if (!d.fecha) return { ok: false, error: 'Fecha requerida' };
+    // MP — antiduplicado: si el equipo YA tiene una MP en ese mes (p. ej. un
+    // borrador importado del maestro), se ACTUALIZA ese evento en vez de crear
+    // un segundo (que se marcaría "duplicada"). Conserva un único registro/mes.
+    if (d.tipo === 'Mantención preventiva') {
+      const dRef = new Date(d.fecha + 'T00:00:00');
+      if (!isNaN(dRef)) {
+        const ex = eventoMPMes(d.inv, dRef.getFullYear(), dRef.getMonth());
+        if (ex) {
+          const r = corregirMP(ex, { resultado: d.resultado, fecha: d.fecha, ejecutor: d.ejecutor, obs: d.obs, estadoSi: d.mpEstadoSi || 'operativo' });
+          if (!r.ok) return r;
+          if (d.oficial && ex.oficial !== d.oficial) { audit('evento', ex.id, 'oficial', ex.oficial, d.oficial); ex.oficial = d.oficial; }
+          if (d.ejecutor2 != null) ex.ejecutor2 = d.ejecutor2 || null;
+          // El registro pasa a ser propio del usuario (deja de tratarse como "importado").
+          if (ex.origen === 'conciliacion_auto' || ex.origen === 'conciliacion') delete ex.origen;
+          save();
+          return { ok: true, evento: ex, consolidado: true };
+        }
+      }
+    }
     // Aviso MP en mes sin programación (la UI decide si confirma y reintenta forzando)
     if (d.tipo === 'Mantención preventiva' && !d.forzarSinProg) {
       const aviso = avisoMPSinProgramacion(eq, d.fecha);
@@ -1870,7 +1910,7 @@
     parsearHojaRegistro, compararMaestro, registrarOActualizarConflicto,
     resolverConflicto, nombreCampoConflicto,
     // operaciones MP
-    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, corregirMP, registrarMPMasiva,
+    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, corregirMP, consolidarMPDuplicadas, registrarMPMasiva,
     // operaciones eventos
     crearEvento, docsEsperadosEvento, oficializarEvento, editarEvento, anularEvento,
     // operaciones pendientes / baja
