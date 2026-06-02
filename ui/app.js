@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b14';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b15';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1632,7 +1632,7 @@
       h('div', { class: 's-hd' }, h('h3', {}, 'Maestro y asignaciones MP')),
       h('div', { class: 's-bd' },
         h('div', { class: 'notice info' }, 'Importa el maestro Excel (hojas PMP_AAAA y Registro_MP-AAAA): lo que coincide se oficializa, lo nuevo se importa y las diferencias quedan como conflictos abajo para resolver. Descarga la plantilla del mes, asigna responsables y súbela.'),
-        h('div', { class: 'btn-row' }, h('button', { class: 'btn primary', onclick: () => importarMaestro(renderConf) }, svg(ic.up, 14), 'Importar maestro (.xlsx)')),
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn primary', onclick: () => importarMaestro(renderConf) }, svg(ic.up, 14), 'Importar maestro (.xlsx/.xlsm)')),
         h('div', { class: 'btn-row', style: { marginTop: '10px', alignItems: 'center' } },
           h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Plantilla:'), field(null, selM), field(null, selY),
           h('button', { class: 'btn', onclick: () => descargarPlantilla(my, mm) }, svg(ic.dl, 14), 'Descargar plantilla'),
@@ -1865,7 +1865,7 @@
   }
   async function importarMaestro(after) {
     if (!window.XLSX) return toast('XLSX no disponible (sin conexión)', 'error');
-    const inp = h('input', { type: 'file', accept: '.xlsx,.xls', style: { display: 'none' }, onchange: async e => {
+    const inp = h('input', { type: 'file', accept: '.xlsx,.xlsm,.xls', style: { display: 'none' }, onchange: async e => {
       const f = e.target.files[0]; if (!f) return;
       toast('Procesando maestro…', '');
       try {
