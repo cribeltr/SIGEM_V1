@@ -140,9 +140,12 @@ function writeSheets(sheets) {
       sh.setFrozenRows(hr);
       if (hr >= 1) sh.getRange(1, 1, 1, maxc).setFontWeight('bold');
     }
-    // Recortar filas/columnas sobrantes para no dejar miles de celdas vacías.
-    var usedR = Math.max(rows.length, 1), usedC = Math.max(maxc, 1);
-    if (sh.getMaxRows() > usedR) sh.deleteRows(usedR + 1, sh.getMaxRows() - usedR);
+    // Recortar filas/columnas sobrantes. Se deja SIEMPRE ≥1 fila NO inmovilizada: si la hoja
+    // sólo trae encabezado (sin datos) y está inmovilizado, Sheets no permite borrar todas
+    // las filas no inmovilizadas → "No se pueden eliminar todas las filas que no estén inmovilizadas".
+    var usedC = Math.max(maxc, 1);
+    var keepR = Math.max(rows.length, 1, sh.getFrozenRows() + 1);
+    if (sh.getMaxRows() > keepR) sh.deleteRows(keepR + 1, sh.getMaxRows() - keepR);
     if (sh.getMaxColumns() > usedC) sh.deleteColumns(usedC + 1, sh.getMaxColumns() - usedC);
     if (spec.hidden || isSystem(spec.name)) sh.hideSheet();
     else { sh.showSheet(); order.push(spec.name); }
