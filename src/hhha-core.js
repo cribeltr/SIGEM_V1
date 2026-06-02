@@ -1582,12 +1582,25 @@
   const ACTIVIDAD_MAX = 1500;
   let _actTimer = null;
   function getActividad() { return state.actividad || (state.actividad = []); }
+  // Une dos registros de actividad (telemetría append-only) sin duplicar, ordenado y acotado.
+  function mergeActividad(a, b) {
+    const seen = new Set(), res = [];
+    (a || []).concat(b || []).forEach(e => {
+      if (!e || !e.ts) return;
+      const k = e.ts + '|' + (e.sesion || '') + '|' + (e.accion || '');
+      if (seen.has(k)) return; seen.add(k); res.push(e);
+    });
+    res.sort((x, y) => (x.ts || '').localeCompare(y.ts || ''));
+    if (res.length > ACTIVIDAD_MAX) res.splice(0, res.length - ACTIVIDAD_MAX);
+    return res;
+  }
   function logActividad(accion, extra) {
     if (!state || !accion) return;
     state.actividad = state.actividad || [];
-    const ent = { ts: new Date().toISOString(), vista: (extra && extra.vista) || '', accion: String(accion).replace(/\s+/g, ' ').trim().slice(0, 140) };
-    if (extra && extra.inv) ent.inv = extra.inv;
-    if (extra && extra.usuario) ent.usuario = extra.usuario;
+    extra = extra || {};
+    const ent = { ts: new Date().toISOString(), sesion: extra.sesion || '', vista: extra.vista || '', cat: extra.cat || 'acción', accion: String(accion).replace(/\s+/g, ' ').trim().slice(0, 140) };
+    if (extra.inv) ent.inv = extra.inv;
+    ent.usuario = extra.usuario || 'Cristian';
     if (!ent.accion) return;
     state.actividad.push(ent);
     if (state.actividad.length > ACTIVIDAD_MAX) state.actividad.splice(0, state.actividad.length - ACTIVIDAD_MAX);
@@ -1715,7 +1728,10 @@
   // Reemplaza el state con un backup ya parseado. (Núcleo de "importData".)
   function importarBackup(data) {
     if (!data || !data.__v) return { ok: false, error: 'Archivo no válido (falta __v).' };
+    const prevAct = (state && state.actividad) ? state.actividad.slice() : [];
     state = migrate(data);
+    // La actividad es telemetría append-only: conservar la local + la importada (no se pierde al sincronizar).
+    state.actividad = mergeActividad(prevAct, state.actividad);
     normalizarEquipos();
     reconstruirCiclos();
     normalizarTiposEvento();
