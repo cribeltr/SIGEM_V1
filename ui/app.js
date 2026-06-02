@@ -314,6 +314,18 @@
       toast('Delegado a ' + nombreCorto(x), 'success'); scheduleRefresh();
     }]));
   }
+  // Recordatorio en lote: registra un seguimiento en TODOS los pendientes activos
+  // de un responsable (reinicia su reloj de 3 días). `items` = [{p,...}] de la home.
+  function recordarLotePop(items, anchor) {
+    const grupos = {};
+    items.forEach(({ p }) => { const e = p.ejecutor; if (!e) return; (grupos[e] = grupos[e] || []).push(p); });
+    const claves = Object.keys(grupos).sort((a, b) => grupos[b].length - grupos[a].length);
+    if (!claves.length) return toast('No hay pendientes con responsable asignado', '');
+    popover(anchor, claves.map(e => [`${nombreCorto(e)} (${grupos[e].length})`, () => {
+      grupos[e].forEach(p => H.agregarSeguimiento(p, 'Recordatorio enviado a ' + e));
+      toast(`Recordados ${grupos[e].length} pendiente(s) a ${nombreCorto(e)}`, 'success'); scheduleRefresh();
+    }]));
+  }
   VIEWS.inicio = function () {
     const S = H.getState();
     const hoy = H.hoyLocal();
@@ -325,7 +337,15 @@
     let fechaLarga = hoy; try { fechaLarga = new Date(hoy + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) {}
     root.appendChild(h('div', { class: 'home-hi' }, h('h1', {}, saludo), h('span', { class: 'home-date' }, fechaLarga)));
 
-    // === Tarea puntual del mes: asignación de MP (aparece solo si hay sin asignar) ===
+    // === Datos de pendientes (se usan en los avisos y en el bloque de abajo) ===
+    const pend = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const baseDe = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean).sort(); const ult = fs[fs.length - 1]; return (ult && ult > (p.fechaCrea || '')) ? ult : (p.fechaCrea || hoy); };
+    const lista = pend.map(p => { const dias = H.diasEntreFechas(baseDe(p), hoy); return { p, dias, recordar: dias >= 3 }; })
+      .sort((a, b) => (b.recordar - a.recordar) || (b.dias - a.dias) || (a.p.fechaComp || '9999').localeCompare(b.p.fechaComp || '9999'));
+    const porRecordar = lista.filter(x => x.recordar).length;
+    const sinResp = pend.filter(p => !p.ejecutor);
+
+    // === Avisos / tareas puntuales (aparecen solo cuando corresponde) ===
     const keyMes = `${YEAR}-${String(MONTH + 1).padStart(2, '0')}`;
     const asig = (S.asignacionesMP || {})[keyMes] || {};
     const progMes = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]));
@@ -337,6 +357,14 @@
           h('div', { class: 'ht-title' }, 'Asignación del mes · ' + MES_ESP(MONTH)),
           h('div', { class: 'ht-sub' }, `Hay ${sinAsignar.length} equipo(s) programado(s) sin responsable. Distribúyelos entre los ejecutores.`)),
         h('button', { class: 'btn primary', onclick: e => { e.stopPropagation(); go('asignaciones'); } }, 'Asignar')));
+    }
+    if (sinResp.length) {
+      root.appendChild(h('div', { class: 'home-task warn', onclick: () => go('pendientes', { ejec: '__none' }) },
+        h('span', { class: 'ht-ico' }, svg(ic.pendientes, 20)),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { class: 'ht-title' }, `${sinResp.length} pendiente(s) sin delegar`),
+          h('div', { class: 'ht-sub' }, 'Asígnales un responsable para no perderles el seguimiento.')),
+        h('button', { class: 'btn', onclick: e => { e.stopPropagation(); go('pendientes', { ejec: '__none' }); } }, 'Delegar')));
     }
 
     // === BLOQUE 1 · Registrar ===
@@ -350,11 +378,6 @@
         h('button', { class: 'reg-btn', onclick: () => importarMaestro(() => scheduleRefresh()) }, svg(ic.up, 15), h('span', {}, 'Cargar archivo maestro')))));
 
     // === BLOQUE 2 · Pendientes (priorizados, regla de 3 días) ===
-    const pend = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
-    const baseDe = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean).sort(); const ult = fs[fs.length - 1]; return (ult && ult > (p.fechaCrea || '')) ? ult : (p.fechaCrea || hoy); };
-    const lista = pend.map(p => { const dias = H.diasEntreFechas(baseDe(p), hoy); return { p, dias, recordar: dias >= 3 }; })
-      .sort((a, b) => (b.recordar - a.recordar) || (b.dias - a.dias) || (a.p.fechaComp || '9999').localeCompare(b.p.fechaComp || '9999'));
-    const porRecordar = lista.filter(x => x.recordar).length;
     const refrescar = () => scheduleRefresh();
     const pendCard = ({ p, dias, recordar }) => h('div', { class: 'pend-card' + (recordar ? ' recordar' : ''), onclick: () => formPendiente(p) },
       h('div', { class: 'pc-main' },
@@ -371,6 +394,7 @@
         h('h2', {}, 'Pendientes'),
         h('span', { class: 'home-sec-sub' }, `${pend.length} activo(s)` + (porRecordar ? ` · ${porRecordar} por recordar` : '')),
         h('div', { class: 'tb-spacer' }),
+        porRecordar ? h('button', { class: 'btn sm', title: 'Recordar en lote todos los pendientes de un responsable', onclick: ev => recordarLotePop(lista, ev.currentTarget) }, 'Recordar a…') : null,
         h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
       lista.length

@@ -135,6 +135,9 @@ body {
 .home-task { display: flex; align-items: center; gap: 13px; padding: 14px 16px; cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border)); background: var(--accent-bg); border-radius: 14px; transition: border-color .12s, transform .12s; }
 .home-task:hover { border-color: var(--accent); transform: translateY(-1px); }
+.home-task.warn { border-color: color-mix(in srgb, var(--st) 36%, var(--border)); background: var(--st-bg); }
+.home-task.warn:hover { border-color: var(--st); }
+.home-task.warn .ht-ico { color: var(--st); }
 .home-task .ht-ico { color: var(--accent); display: flex; flex: 0 0 auto; }
 .home-task .ht-title { font-weight: 650; font-size: 13.5px; }
 .home-task .ht-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
