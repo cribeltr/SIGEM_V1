@@ -45,7 +45,7 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SIGEM · Equipos Biomédicos Críticos</title>
+<title>Gestión Equipos Críticos HHHA</title>
 <!-- =========================================================================
   SIGEM · build de archivo único (autocontenible, offline).
   ARCHIVO GENERADO por tools/build.js — no editar a mano.

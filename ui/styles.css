@@ -26,9 +26,9 @@
   --baja: #6b7280;  --baja-bg:#eef0f2;
   --desc: #8a93a0;  --desc-bg:#eef1f4;
 
-  --shadow: 0 1px 2px rgba(20,23,28,.06), 0 2px 8px rgba(20,23,28,.05);
-  --shadow-lg: 0 8px 30px rgba(20,23,28,.16);
-  --radius: 7px; --radius-sm: 5px; --radius-xs: 4px;
+  --shadow: 0 1px 2px rgba(20,23,28,.05), 0 4px 14px rgba(20,23,28,.05);
+  --shadow-lg: 0 12px 40px rgba(20,23,28,.18);
+  --radius: 8px; --radius-sm: 6px; --radius-xs: 4px;
 
   --rail-w: 208px; --rail-w-collapsed: 52px; --topbar-h: 46px;
   --mono: 'SF Mono','JetBrains Mono','Roboto Mono',Menlo,Consolas,monospace;
@@ -459,11 +459,16 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 @keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes cmdk-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.985); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: no-preference) {
   #view > * { animation: view-in .22s cubic-bezier(.2, .6, .2, 1) both; }
-  .kpi, .alert-card, .wl-item { transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease; }
-  .kpi:hover, .alert-card:hover, .wl-item:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .kpi, .alert-card, .wl-item, .kb-card { transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease; }
+  .kpi:hover, .alert-card:hover, .wl-item:hover, .kb-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .btn:active { transform: scale(.975); }
+  .alert-strip > * { animation: pop-in .3s cubic-bezier(.2, .7, .3, 1) both; }
+  .alert-strip > *:nth-child(n+4) { animation-delay: .03s; }
+  .alert-strip > *:nth-child(n+8) { animation-delay: .06s; }
   table.dense tbody tr { transition: background .1s ease; }
   .nav-item { transition: background .12s ease, color .12s ease; }
   .btn { transition: background .1s ease, border-color .1s ease, transform .06s ease, box-shadow .12s ease; }

@@ -105,7 +105,7 @@
   const DOCS_CORRECTIVO = ['Solicitud SIGEM con tarea cerrada', 'Cotización', 'Informe técnico trato directo', 'Orden de compra', 'Guía de despacho de repuestos', 'Informe visita diagnóstica', 'Informe visita correctiva', 'Hoja de envío', 'Informe técnico ST externo', 'Guía de despacho de retorno'];
   const DOCS_PREVENTIVO = ['Protocolo / hoja de MP', 'Pauta de monitoreo diario (DEA)', 'Firma jefe equipo médico', 'Informe técnico de empresa externa'];
 
-  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', gestion_general: 'Gestión general' };
+  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
   // Estados de pendiente orientados a la acción: No iniciado -> En proceso -> Resuelto.
   // 'cerrado' se conserva como estado final (= Resuelto) para no romper conteos (!== 'cerrado').
   const ESTADO_PEND_LABEL = { no_iniciado: 'No iniciado', en_proceso: 'En proceso', cerrado: 'Resuelto' };
@@ -1401,6 +1401,32 @@
     return { ok: true, pendiente: p };
   }
 
+  // Registra una GESTIÓN de seguimiento sobre un equipo (típicamente caído): deja constancia
+  // de a quién se contactó y el estado reportado, y fija el PRÓXIMO RECORDATORIO para que el
+  // equipo vuelva a aparecer y no quede sin seguimiento. Reutiliza un pendiente abierto del
+  // equipo o crea uno de tipo 'seguimiento'. Devuelve {ok, pendiente}.
+  function registrarGestionEquipo(d) {
+    const eq = findEquipo(d.inv);
+    if (!eq) return { ok: false, error: 'Equipo no encontrado' };
+    let p = state.pendientes.find(x => x.inv === d.inv && !x.anulado && x.estado !== 'cerrado');
+    if (!p) {
+      const r = crearPendiente({ inv: d.inv, tipo: 'seguimiento', desc: 'Seguimiento de estado del equipo', ejecutor: d.contacto || encargadoDe(eq) || null });
+      if (!r.ok) return r;
+      p = r.pendiente;
+    }
+    const partes = [];
+    if (d.contacto) partes.push('Contacto: ' + d.contacto);
+    if (d.estadoReportado) partes.push('Estado reportado: ' + d.estadoReportado);
+    if (d.texto && d.texto.trim()) partes.push(d.texto.trim());
+    agregarSeguimiento(p, partes.join(' · ') || 'Gestión registrada');
+    if (p.estado === 'no_iniciado') p.estado = 'en_proceso';
+    if (d.proxRecord) p.proxRecord = d.proxRecord;
+    audit('pendiente', p.id, 'gestion', null, partes.join(' · '));
+    save();
+    UI.onChange();
+    return { ok: true, pendiente: p };
+  }
+
   // Actualiza campos editables de un pendiente. (Núcleo del "Guardar" de abrirPendiente.)
   // cambios = {tipo, estado, ejecutor, desc, fechaComp, proxRecord}
   function actualizarPendiente(p, cambios) {
@@ -1783,7 +1809,7 @@
     // operaciones eventos
     crearEvento, docsEsperadosEvento, oficializarEvento, editarEvento, anularEvento,
     // operaciones pendientes / baja
-    crearPendiente, actualizarPendiente, anularPendiente, agregarTareaPendiente,
+    crearPendiente, registrarGestionEquipo, actualizarPendiente, anularPendiente, agregarTareaPendiente,
     toggleTarea, agregarSeguimiento, cerrarPendiente, cerrarCicloManual, darDeBaja,
     // export / import
     exportarBackupJSON, importarBackup, mesDelNombreArchivo, construirAsignacionMP,

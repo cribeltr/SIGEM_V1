@@ -56,7 +56,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b28';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-02 · v1.0';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -270,23 +270,26 @@
       mount(caidosWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
           h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Estado'),
-          h('th', { class: 'num' }, 'Días en estado'), h('th', {}, 'Última gestión'), h('th', { class: 'num' }, 'Días s/gestión'), h('th', {}, 'Detalle'))),
+          h('th', { class: 'num' }, 'Días en estado'), h('th', {}, 'Última gestión'), h('th', { class: 'num' }, 'Días s/gestión'), h('th', {}, 'Detalle'), h('th', { class: 'shrink' }, ''))),
         h('tbody', {}, ...list.map(({ e, dias, g, sinG }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
           h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
           h('td', {}, estadoPill(e.estado)),
           h('td', { class: 'num', style: rojo(dias) }, dias),
           h('td', {}, g ? fmtFecha(g.fecha) : h('span', { class: 'faint' }, 'sin gestión')),
           h('td', { class: 'num', style: rojo(sinG) }, sinG == null ? '—' : sinG),
-          h('td', { class: 'muted', title: g ? g.texto : '' }, g ? g.texto : '—'))))));
+          h('td', { class: 'muted', title: g ? g.texto : '' }, g ? g.texto : '—'),
+          h('td', {}, h('button', { class: 'btn sm', title: 'Registrar gestión y recordatorio', onclick: ev => { ev.stopPropagation(); formRegistrarGestion(e); } }, 'Gestión')))))));
     }
     const segCaidos = h('div', { class: 'seg', title: 'Ordenar la tabla' }, ...[['estado', 'Días en estado'], ['gestion', 'Días sin gestión']].map(([v, l]) =>
       h('button', { class: ordenCaidos === v ? 'on' : '', onclick: e => { ordenCaidos = v; [...segCaidos.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); renderCaidos(); } }, l)));
     if (caidos.length) renderCaidos();
+    const expCaidos = h('button', { class: 'btn sm', title: 'Exportar a Excel', onclick: () => { const list = caidos.slice().sort(ordenCaidos === 'gestion' ? (a, b) => sgVal(b) - sgVal(a) : (a, b) => b.dias - a.dias); exportTablaExcel('Equipos caídos', 'Equipos caídos (no operativos y en servicio técnico) · ' + H.hoyLocal(), ['N° Inv.', 'Equipo', 'Servicio', 'Estado', 'Días en estado', 'Última gestión', 'Días s/gestión', 'Detalle gestión', 'Encargado'], list.map(({ e, dias, g, sinG }) => [e.inv, e.equipo || '', e.servicio || '', ESTADO_LABEL[e.estado] || e.estado, dias, g ? fmtFecha(g.fecha) : '', sinG == null ? '' : sinG, g ? g.texto : 'sin gestión', H.encargadoDe(e) || '']), `HHHA_equipos_caidos_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar');
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, h('h3', {}, 'Equipos caídos'),
         h('span', { class: 's-sub' }, `${noop.length} no operativos · ${st.length} en servicio técnico`),
         h('div', { class: 'tb-spacer' }),
         caidos.length ? segCaidos : null,
+        caidos.length ? expCaidos : null,
         caidos.length ? h('button', { class: 'btn sm', onclick: () => go('equipos', { alerta30: 1 }) }, 'Ver +30 días') : null),
       h('div', { class: 's-bd flush' }, caidos.length ? caidosWrap : h('div', { class: 'empty' }, '✓ Sin equipos caídos'))));
 
@@ -567,7 +570,7 @@
     const estLbl = { ejecutada: 'Ejecutada', reprogramada: 'Reprogramada', otro: 'Otro', pendiente: 'Pendiente' };
     const header = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Familia', 'Marca', 'Modelo', 'Serie', 'Freq MP', 'Estado', 'Días', 'Encargado', 'Pend. abiertos', `MP ${MES_ESP(MONTH)}`];
     const rows = list.map(e => [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.fam || '', e.marca || '', e.modelo || '', e.serie || '', e.freq || '', ESTADO_LABEL[e.estado] || e.estado, H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, estLbl[H.mpEstadoMes(e, YEAR, MONTH)] || '']);
-    exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `SIGEM_equipos_${H.hoyLocal()}.xlsx`);
+    exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_equipos_${H.hoyLocal()}.xlsx`);
   }
   function mpMesBadge(e) {
     if (e.estado === 'baja') return h('span', { class: 'faint' }, '—');
@@ -599,6 +602,7 @@
         ].map(([k, v]) => h('div', { class: 'kv' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v == null || v === '' ? '—' : String(v)))))),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formNuevoEvento({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo evento'),
+        (eq.estado === 'no_operativo' || eq.estado === 'en_servicio_tecnico') ? h('button', { class: 'btn sm', title: 'Registrar seguimiento y fijar recordatorio', onclick: () => formRegistrarGestion(eq) }, svg(ic.cloud, 14), 'Registrar gestión') : null,
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
@@ -900,7 +904,7 @@
   function exportarPendientes(list) {
     const header = ['ID', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Creado', 'Compromiso', 'Atraso (días)', 'Próx. recordatorio'];
     const rows = list.map(p => { const at = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : ''; return [p.id, p.inv, p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fmtFecha(p.fechaCrea), fmtFecha(p.fechaComp), (at !== '' && at > 0 ? at : ''), fmtFecha(p.proxRecord)]; });
-    exportTablaExcel('Pendientes', 'Pendientes (vista filtrada) · ' + H.hoyLocal(), header, rows, `SIGEM_pendientes_${H.hoyLocal()}.xlsx`);
+    exportTablaExcel('Pendientes', 'Pendientes (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_pendientes_${H.hoyLocal()}.xlsx`);
   }
   function pendientesTable(list, opts) {
     opts = opts || {}; const sel = opts.sel; const colf = opts.colf;
@@ -944,10 +948,11 @@
     const wrap = h('div', { class: 'tbl-wrap' });
     const cf = colFilters(render);
     const eqName = c => (H.findEquipo(c.inv) || {}).equipo || '—';
+    let lastList = [];
     function render() {
       let list = S.ciclos.slice().reverse();
       if (estado !== 'todos') list = list.filter(c => c.estado === estado);
-      list = cf.apply(list);
+      list = cf.apply(list); lastList = list;
       mount(wrap, S.ciclos.length ? h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
           cf.thF('folio', 'N° Informe / Folio', c => c.folio || '—'), cf.thF('inv', 'N° Inv.', c => c.inv), cf.thF('equipo', 'Equipo', eqName),
@@ -960,7 +965,8 @@
     }
     const seg = h('div', { class: 'seg' }, ...[['abierto', 'Abiertos'], ['cerrado', 'Cerrados'], ['anulado', 'Anulados'], ['todos', 'Todos']].map(([v, l]) =>
       h('button', { class: estado === v ? 'on' : '', onclick: e => { estado = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
-    render(); return h('div', {}, h('div', { class: 'filterbar' }, segEventos('correctivos'), seg), wrap);
+    const expC = h('button', { class: 'btn sm', title: 'Exportar a Excel (respeta el filtro)', onclick: () => exportTablaExcel('Correctivos', 'Ciclos correctivos (filtrado) · ' + H.hoyLocal(), ['N° Informe / Folio', 'N° Inv.', 'Equipo', 'Apertura', 'Cierre', 'Estado', 'Ingeniero'], lastList.map(c => [c.folio || '', c.inv, eqName(c), fmtFecha(c.fechaApertura), c.fechaCierre ? fmtFecha(c.fechaCierre) : '', c.estado, c.ingenieroAsignado || '']), `HHHA_correctivos_${H.hoyLocal()}.xlsx`) }, svg(ic.dl, 14), 'Exportar');
+    render(); return h('div', {}, h('div', { class: 'filterbar' }, segEventos('correctivos'), seg, h('div', { class: 'tb-spacer' }), expC), wrap);
   };
 
   // ---- EVENTOS (bitácora global) ------------------------------------------
@@ -1000,7 +1006,7 @@
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.anulados = e.target.checked; render(); } }), 'Ver anulados'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.dup ? true : false, onchange: e => { f.dup = e.target.checked; render(); } }), 'Solo duplicadas'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `SIGEM_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
+        h('button', { class: 'btn sm', onclick: () => { const list = data(); exportTablaExcel('Bitácora', 'Bitácora (vista filtrada) · ' + H.hoyLocal(), ['Fecha', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado', 'Ejecutor', 'N° Informe / Folio', 'Oficial', 'Observación'], list.map(e => [fmtFecha(e.fecha), e.inv, e.equipo || '', H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.oficial || 'No', e.obs || '']), `HHHA_bitacora_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoEvento({}) }, svg(ic.plus, 14), 'Nuevo evento'), note),
       wrap);
     render(); return root;
@@ -1116,6 +1122,7 @@
     }
     const seg = h('div', { class: 'seg' }, ...[['todas', 'Todas'], ['pend', 'Pendientes'], ['ejec', 'Ejecutadas']].map(([v, l]) =>
       h('button', { class: estadoMP === v ? 'on' : '', onclick: e => { estadoMP = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
+    const expA = h('button', { class: 'btn sm', title: 'Exportar a Excel (respeta el filtro)', onclick: () => { const d = data(); exportTablaExcel('MP del mes', `MP de ${MES_ESP(m)} ${y} (filtrado)`, ['N° Inv.', 'Equipo', 'Servicio', 'Freq', 'Programado', 'Resultado', 'Estado MP', 'Encargado', 'Responsable MP'], d.list.map(e => [e.inv, e.equipo || '', e.servicio || '', e.freq || '', progDe(e), H.resultadoMPMes(e, y, m) || '', estLblMP(H.mpEstadoMes(e, y, m)), H.encargadoDe(e) || '', d.asig[e.inv] || 'sin asignar']), `HHHA_mp_${y}-${String(m + 1).padStart(2, '0')}.xlsx`); } }, svg(ic.dl, 14), 'Exportar');
     const root = h('div', {},
       h('div', { class: 'filterbar' },
         field(null, selectEl(MESES.map((mm, i) => [i, MES_ESP(i)]), m, { onchange: e => { m = +e.target.value; mpSel.clear(); render(); } })),
@@ -1124,7 +1131,7 @@
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: sinAsig ? true : false, onchange: e => { sinAsig = e.target.checked; mpSel.clear(); render(); } }), 'Sin asignar'),
         mpf ? h('span', { class: 'chip', style: { color: 'var(--accent)', borderColor: 'var(--accent)' } }, h('b', {}, 'Filtro: ' + (MPF_LBL[mpf] || mpf)), h('span', { class: 'x', title: 'Quitar filtro', onclick: () => go('asignaciones', { year: y, month: m }) }, '×')) : null,
         h('div', { class: 'tb-spacer' }),
-        bulkAsig, note),
+        expA, bulkAsig, note),
       wrap);
     render(); return root;
   };
@@ -1282,14 +1289,14 @@
     function exportar() {
       if (modo === 'mes') {
         const rows = filasPorMes().map(r => [MES_ESP(r.i), r.prog, r.oficial, r.borrador, r.reprog, r.noReg, r.realiz, r.fs, r.nu, r.baja, r.sinReg, r.asignadas, r.sinAsig, r.pct == null ? '' : r.pct + '%']);
-        return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `SIGEM_mp_por_mes_${y}.xlsx`);
+        return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `HHHA_mp_por_mes_${y}.xlsx`);
       }
       if (modo === 'responsable') {
         const rows = filasPorResponsable().map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
-        return exportTablaExcel('Responsables', `Indicadores por responsable · ${MES_ESP(m)} ${y}`, ['Responsable', 'Pend. abiertos', 'Vencidos', `MP ${MES_ESP(m)}`, `MP ${y}`, `Eventos ${y}`, 'Equipos a cargo'], rows, `SIGEM_responsables_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
+        return exportTablaExcel('Responsables', `Indicadores por responsable · ${MES_ESP(m)} ${y}`, ['Responsable', 'Pend. abiertos', 'Vencidos', `MP ${MES_ESP(m)}`, `MP ${y}`, `Eventos ${y}`, 'Equipos a cargo'], rows, `HHHA_responsables_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
       }
       const rows = filasPorServicio().map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
-      exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `SIGEM_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
+      exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `HHHA_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
     }
     const seg = h('div', { class: 'seg' }, ...[['mes', 'Por mes'], ['servicio', 'Por servicio'], ['responsable', 'Por responsable']].map(([v, l]) =>
       h('button', { class: modo === v ? 'on' : '', onclick: e => { modo = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
@@ -1430,6 +1437,29 @@
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn danger', onclick: () => { const s = motivo.value; const x = otro.value.trim(); let m; if (s === '__otro') { if (!x) return toast('Especifica el motivo', 'error'); m = x; } else if (!s) return toast('Selecciona un motivo', 'error'); else m = s + (x ? ' — ' + x : ''); const r = H.anularEvento(e, m); toast('Evento anulado' + (r.revertidos.length ? ' (' + r.revertidos.join('; ') + ')' : ''), 'success'); closeDrawer(); } }, 'Anular')]
     });
   }
+  // Registrar gestión de seguimiento sobre un equipo caído: a quién contactaste, qué te
+  // informó y el próximo recordatorio (para que el equipo no quede sin seguimiento).
+  function formRegistrarGestion(eq) {
+    const enc = H.encargadoDe(eq) || '';
+    const contacto = selectEl([['', '— a quién contactaste —'], ...EJECUTORES.map(x => [x, x])], EJECUTORES.indexOf(enc) >= 0 ? enc : '');
+    const estadoRep = selectEl([['', '— estado reportado —'], 'Sigue no operativo', 'En servicio técnico', 'En reparación', 'Esperando repuesto/OC', 'Listo para retiro', 'Operativo (resuelto)', 'Sin novedad'].map(o => Array.isArray(o) ? o : [o, o]), '');
+    const nota = h('textarea', { placeholder: 'Detalle / respuesta del técnico…' });
+    const prox = h('input', { type: 'date', value: H.addDias(H.hoyLocal(), 7) });
+    openDrawer({
+      title: 'Registrar gestión · ' + eq.inv,
+      body: h('div', {},
+        h('div', { class: 'notice info' }, `${eq.equipo || ''} — estado actual: ${ESTADO_LABEL[eq.estado] || eq.estado}. Anota la gestión y se fijará un recordatorio para no perderle el seguimiento.`),
+        h('div', { class: 'grid-2' }, field('Contacté a', contacto), field('Estado reportado', estadoRep)),
+        field('Nota', nota),
+        field('Próximo recordatorio', prox)),
+      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: () => {
+        const r = H.registrarGestionEquipo({ inv: eq.inv, contacto: contacto.value, estadoReportado: estadoRep.value, texto: nota.value, proxRecord: prox.value || null });
+        if (!r.ok) return toast(r.error, 'error');
+        toast('Gestión registrada' + (prox.value ? ' · recordatorio ' + fmtFecha(prox.value) : ''), 'success'); closeDrawer();
+      } }, 'Registrar gestión')]
+    });
+  }
   function formNuevoPendiente(opts) {
     const inv = h('input', { type: 'text', list: 'eqlistp', value: opts.inv || '', placeholder: 'N° Inventario' });
     const dl = h('datalist', { id: 'eqlistp' }, ...H.getState().equipos.slice(0, 300).map(e => h('option', { value: e.inv }, e.equipo || '')));
@@ -1480,17 +1510,6 @@
     openDrawer({
       title: 'Dar de baja · ' + eq.inv, body: h('div', {}, eqMini(eq), h('div', { class: 'notice danger' }, 'El equipo pasa a "baja", se marca la matriz y se cierran sus pendientes activos.'), field('Motivo', motivo)),
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn danger', onclick: () => { if (!motivo.value.trim()) return toast('Motivo requerido', 'error'); H.darDeBaja(eq, motivo.value.trim()); toast('Equipo dado de baja', 'success'); closeDrawer(); go('equipo', { inv: eq.inv }); } }, 'Confirmar baja')]
-    });
-  }
-  function formAsignarEncargado(eq) {
-    const sel = selectEl([['', '— sin asignar —'], ...EJECUTORES.map(x => [x, x])], eq.encargado || '');
-    openDrawer({
-      title: 'Encargado del equipo · ' + eq.inv,
-      body: h('div', {}, eqMini(eq),
-        h('div', { class: 'notice info' }, eq.encargado ? 'Tiene un responsable asignado explícitamente.' : 'Sin responsable explícito; hoy se muestra el derivado (ciclo abierto o último ejecutor): ' + (H.encargadoDe(eq) || '—') + '.'),
-        field('Responsable del equipo', sel)),
-      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'),
-      h('button', { class: 'btn primary', onclick: () => { H.asignarEncargado(eq, sel.value || null); H.save(); toast('Encargado actualizado', 'success'); closeDrawer(); go('equipo', { inv: eq.inv }); } }, 'Guardar')]
     });
   }
   function eqMini(eq, p) {
@@ -1733,7 +1752,7 @@
     // Inicio (portada + leyenda de códigos)
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
-        ['SIGEM · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
+        ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
         ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Equipos en servicio técnico · Equipos no operativos.'],
         ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
         ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
@@ -1843,7 +1862,7 @@
     const selM = selectEl(MESES.map((x, i) => [i, MES_ESP(i)]), mm, { onchange: e => { mm = +e.target.value; } });
     const selY = selectEl([YEAR + 1, YEAR, YEAR - 1].map(y => [y, y]), my, { onchange: e => { my = +e.target.value; } });
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Maestro y asignaciones MP')),
+      h('div', { class: 's-hd' }, svg(ic.conciliacion, 16), h('h3', {}, 'Maestro y asignaciones MP')),
       h('div', { class: 's-bd' },
         h('div', { class: 'notice info' }, 'Importa el maestro Excel (hojas PMP_AAAA y Registro_MP-AAAA): lo que coincide se oficializa, lo nuevo se importa y las diferencias quedan como conflictos abajo para resolver. Descarga la plantilla del mes, asigna responsables y súbela.'),
         h('div', { class: 'btn-row' }, h('button', { class: 'btn primary', onclick: () => importarMaestro(renderConf) }, svg(ic.up, 14), 'Importar maestro (.xlsx/.xlsm)')),
@@ -1864,11 +1883,11 @@
       h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos')));
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
+      h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
 
     // 4) Respaldo de emergencia (JSON) — el respaldo principal es el Google Sheet
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Respaldo de emergencia')),
+      h('div', { class: 's-hd' }, svg(ic.dl, 16), h('h3', {}, 'Respaldo de emergencia')),
       h('div', { class: 's-bd' },
         h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '6px' } }, 'Tu respaldo principal es el Google Sheet. Esta copia JSON es solo por seguridad (p. ej. antes de un cambio grande o sin conexión).'),
         h('div', { class: 'btn-row' },
@@ -1923,7 +1942,7 @@
 
     // ===== 1) INICIO (portada + instrucciones + leyenda) =====
     const inicio = [
-      ['SIGEM · Cuaderno de operaciones — Equipos Biomédicos Críticos'],
+      ['Gestión Equipos Críticos HHHA · Cuaderno de operaciones'],
       ['Documento para trabajar SIN acceso a la aplicación'],
       [],
       ['Exportado el', hoy, '', 'Periodo MP', periodo],
@@ -2059,7 +2078,7 @@
     add(tableSheet('Bitácora de eventos', null, bHeader, bRows,
       [{ wch: 12 }, { wch: 13 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 8 }, { wch: 44 }]), 'Bitácora');
 
-    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `SIGEM_cuaderno_${hoy}.xlsx`);
+    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), `HHHA_cuaderno_${hoy}.xlsx`);
     toast(`Excel exportado · ${wb.SheetNames.length} hojas`, 'success');
   }
   function descargarPlantilla(y, m) {
@@ -2119,7 +2138,7 @@
     const node = v();
     mount($('#view'), node);
     const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
-    $('#tb-title').textContent = titles[view] || 'SIGEM';
+    $('#tb-title').textContent = titles[view] || 'Gestión Equipos Críticos HHHA';
   }
 
   // ============================ helpers final ===============================
@@ -2152,7 +2171,7 @@
     const app = h('div', { class: 'app' },
       h('div', { class: 'rail-scrim', onclick: () => document.querySelector('.app').classList.remove('rail-open') }),
       h('aside', { class: 'rail' },
-        h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'S'), h('span', {}, 'SIGEM', h('br'), h('small', {}, 'Equipos críticos')))),
+        h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'H'), h('span', {}, 'HHHA', h('br'), h('small', {}, 'Equipos Críticos')))),
         railNav,
         h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'),
           h('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2', minWidth: 0 } },

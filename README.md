@@ -1,6 +1,6 @@
-# SIGEM · Gestión de Equipos Biomédicos Críticos
+# Gestión Equipos Críticos HHHA
 
-Aplicación **de archivo único, 100 % offline**, para el seguimiento de
+Aplicación de gestión y control diario de equipos biomédicos críticos. **Archivo único, 100 % offline**, para el seguimiento de
 mantenimiento preventivo (MP), eventos correctivos, pendientes y estado
 operativo de equipos biomédicos. La lógica de negocio está desacoplada de la
 interfaz y el almacenamiento es opcional en un **Google Sheet** (vía Apps Script).

@@ -1,4 +1,4 @@
-# SIGEM · UI nueva (densa "pro")
+# Gestión Equipos Críticos HHHA · UI (densa "pro")
 
 Interfaz **rediseñada desde cero** sobre el núcleo lógico `../src/hhha-core.js`.
 No reutiliza nada del diseño del archivo original: se generó **a partir de la
