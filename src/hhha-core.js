@@ -1507,6 +1507,7 @@
     normalizarEquipos();
     reconstruirCiclos();
     normalizarTiposEvento();
+    normalizarEstadoEventosMP();
     state.__userActions = state.__userActions || 0;
     save();
     UI.onChange();
@@ -1656,6 +1657,18 @@
     });
     return n;
   }
+  // Corrige el campo `estado` de las MP cuya causal tiene estado determinista (C2/C3/FS/NU/Baja)
+  // pero quedó guardado distinto (dato heredado de importaciones antiguas). 'Si' admite override
+  // manual y C1/C4–C8 no cambian estado, así que no se tocan. Idempotente.
+  function normalizarEstadoEventosMP() {
+    let n = 0;
+    state.eventos.forEach(ev => {
+      if (ev.anulado || ev.tipo !== 'Mantención preventiva' || !MP_CAUSAL_ESTADO[ev.resultado]) return;
+      const esperado = estadoMPDesdeResultado(ev.resultado);
+      if (esperado && ev.estado !== esperado) { audit('evento', ev.id, 'estado', ev.estado, esperado + ' (normalización causal)'); ev.estado = esperado; n++; }
+    });
+    return n;
+  }
   // Devuelve un Set con los IDs de eventos MP DUPLICADOS (el 2º+ del mismo equipo y mes).
   function idsMPDuplicadas() {
     const seen = {}, dup = new Set();
@@ -1677,6 +1690,7 @@
       let cambios = limpiarEfectosAnulados();
       cambios += reconstruirCiclos();          // reconstruye ciclos si el backup no los trae
       cambios += normalizarTiposEvento();      // normaliza etiquetas antiguas de tipo
+      cambios += normalizarEstadoEventosMP();  // corrige estado de MP con causal determinista (C2/C3/FS/NU/Baja)
       if (cambios > 0) {
         save({ internal: true });
         UI.notify(`Migración: ${cambios} ajuste${cambios > 1 ? 's' : ''} de consistencia aplicado${cambios > 1 ? 's' : ''}.`, 'success');
@@ -1705,7 +1719,7 @@
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
-    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
+    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventosMP, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
     // utilidades
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
