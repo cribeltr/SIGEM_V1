@@ -58,7 +58,6 @@
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
   const APP_VERSION = '2026-06-02 · v2.0';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
-  const SESION = new Date().toISOString().slice(0, 19).replace('T', ' ');   // id de sesión (para medir uso/tiempos)
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -80,6 +79,7 @@
   // ----------------------------- toast --------------------------------------
   const toastRoot = h('div', { class: 'toast-root' }); document.body.appendChild(toastRoot);
   function toast(msg, type, action) {
+    try { if (typeof Grab !== 'undefined' && Grab.on) Grab.log(type === 'error' ? 'error' : 'resultado', msg); } catch (e) {}
     const t = h('div', { class: 'toast ' + (type || '') },
       h('span', {}, msg),
       action ? h('span', { class: 't-act', onclick: () => { (action.run || action.fn) && (action.run || action.fn)(); t.remove(); } }, action.label) : null
@@ -141,11 +141,81 @@
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
   let suppressHash = false; // ignora el hashchange que dispara el propio go() (preserva params en memoria)
+
+  // ===== Grabación de sesión (a demanda) ====================================
+  // Registra, SOLO mientras está activa, las pantallas visitadas, los clics, los
+  // resultados (avisos) y los errores. Al detener, exporta un archivo analizable.
+  // No persiste nada en el estado ni en el Sheet: es un registro puntual y local.
+  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', contactos: 'Contactos', configuracion: 'Configuración' };
+  const Grab = {
+    on: false, ini: null, pasos: [], _timer: null,
+    log(tipo, accion, extra) {
+      if (!this.on) return;
+      this.pasos.push(Object.assign({ ts: new Date().toISOString(), tipo, vista: view, inv: (params && params.inv) || '', accion: String(accion == null ? '' : accion).replace(/\s+/g, ' ').trim().slice(0, 220) }, extra || {}));
+      if (this.pasos.length > 6000) this.pasos.shift();
+    },
+    iniciar() {
+      this.on = true; this.ini = new Date(); this.pasos = [];
+      this.log('inicio', 'Inicio de grabación · ' + (TIT_VISTA[view] || view));
+      actualizarBtnGrab(); this._timer = setInterval(actualizarBtnGrab, 1000);
+      toast('Grabación iniciada — se registrará lo que hagas', 'success');
+    },
+    detener() {
+      if (!this.on) return;
+      this.log('fin', 'Fin de grabación');
+      this.on = false; clearInterval(this._timer); this._timer = null;
+      const n = this.pasos.length; exportarGrabacion(this); actualizarBtnGrab();
+      toast(`Grabación detenida · ${n} pasos exportados`, 'success');
+    },
+    toggle() { this.on ? this.detener() : this.iniciar(); }
+  };
+  function actualizarBtnGrab() {
+    const b = document.getElementById('btn-grab'); if (!b) return;
+    if (Grab.on) {
+      const s = Math.max(0, Math.round((Date.now() - Grab.ini.getTime()) / 1000));
+      const mm = String(Math.floor(s / 60)).padStart(2, '0'), ss = String(s % 60).padStart(2, '0');
+      b.classList.add('rec-on'); b.title = 'Detener grabación y exportar';
+      mount(b, h('span', { class: 'rec-dot' }), h('span', {}, 'Detener · ' + mm + ':' + ss));
+    } else {
+      b.classList.remove('rec-on'); b.title = 'Iniciar grabación de la sesión (para revisar lo que haces)';
+      mount(b, h('span', { class: 'rec-dot' }), h('span', { class: 's-hide' }, 'Grabar'));
+    }
+  }
+  function exportarGrabacion(g) {
+    const fin = new Date(); const durS = Math.max(0, Math.round((fin - g.ini) / 1000));
+    const fmtDur = s => (s >= 3600 ? Math.floor(s / 3600) + ' h ' : '') + Math.floor((s % 3600) / 60) + ' min ' + (s % 60) + ' s';
+    const TIPO = { inicio: 'Inicio', fin: 'Fin', pantalla: 'Pantalla', clic: 'Clic', resultado: 'Resultado', error: 'Error' };
+    let prev = null;
+    const filas = g.pasos.map((p, i) => {
+      let d = ''; if (prev) { const dt = (new Date(p.ts) - new Date(prev)) / 1000; if (isFinite(dt) && dt >= 0) d = Math.round(dt); } prev = p.ts;
+      let hora = p.ts; try { const x = new Date(p.ts); if (!isNaN(x)) hora = x.toLocaleString('es-CL'); } catch (e) {}
+      return [i + 1, hora, d, TIPO[p.tipo] || p.tipo, TIT_VISTA[p.vista] || p.vista || '', p.inv || '', p.cat || '', p.accion || ''];
+    });
+    const pantallas = [...new Set(g.pasos.filter(p => p.vista).map(p => TIT_VISTA[p.vista] || p.vista))];
+    const errs = g.pasos.filter(p => p.tipo === 'error');
+    const resumen = [
+      ['GRABACIÓN DE SESIÓN · ' + APP_VERSION],
+      ['Inicio', g.ini.toLocaleString('es-CL')], ['Fin', fin.toLocaleString('es-CL')], ['Duración', fmtDur(durS)],
+      ['Pasos registrados', g.pasos.length], ['Clics', g.pasos.filter(p => p.tipo === 'clic').length],
+      ['Pantallas visitadas', pantallas.length], ['Errores detectados', errs.length], [],
+      ['PANTALLAS VISITADAS'], ...pantallas.map(p => [p]), [],
+      ['ERRORES / AVISOS DE ERROR'], ...(errs.length ? errs.map(e => { let hh = e.ts; try { hh = new Date(e.ts).toLocaleString('es-CL'); } catch (x) {} return [hh, e.accion]; }) : [['(ninguno)']])
+    ];
+    const fnameTs = new Date().toISOString().slice(0, 16).replace('T', '_').replace(/:/g, '');
+    if (!window.XLSX) { dl(new Blob([JSON.stringify({ version: APP_VERSION, inicio: g.ini, fin, durSeg: durS, pasos: g.pasos }, null, 2)], { type: 'application/json' }), 'HHHA_grabacion_' + fnameTs + '.json'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen), 'Resumen');
+    const wsP = XLSX.utils.aoa_to_sheet([['#', 'Hora', 'Δ s', 'Tipo', 'Pantalla', 'N° Inv.', 'Categoría', 'Acción / detalle'], ...filas]);
+    wsP['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: 7 } }) };
+    XLSX.utils.book_append_sheet(wb, wsP, 'Pasos');
+    dl(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/octet-stream' }), 'HHHA_grabacion_' + fnameTs + '.xlsx');
+  }
+
   function go(v, p) {
     view = v; params = p || {}; kbList = null;
     const newHash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : '');
     if (location.hash !== newHash) { suppressHash = true; location.hash = newHash; }
-    try { if (H && H.logActividad) H.logActividad('Abrir: ' + v + (p && p.inv ? ' · ' + p.inv : ''), { cat: 'navegación', vista: v, inv: p && p.inv, sesion: SESION }); } catch (e) {}
+    Grab.log('pantalla', 'Abrir ' + (TIT_VISTA[v] || v) + (p && p.inv ? ' · ' + p.inv : ''));
     renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0);
   }
   function fromHash() {
@@ -880,7 +950,7 @@
           c.servicio ? h('span', { class: 'faint', style: { fontSize: '11px' } }, c.servicio) : h('span', { class: 'faint', style: { fontSize: '11px' } }, 'general'),
           c.anexo ? h('span', { class: 'faint', style: { fontSize: '11.5px' } }, 'anexo ' + c.anexo) : null,
           c.correo ? h('a', { href: 'mailto:' + c.correo, style: { color: 'var(--accent)', fontSize: '11.5px' } }, c.correo) : null)))
-        : h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Sin contactos para este servicio. Agrégalos en Configuración → Contactos del servicio.')));
+        : h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Sin contactos para este servicio. Agrégalos en Contactos (menú superior).')));
   }
   function notasPanel(eq) {
     const box = h('div', {});
@@ -978,31 +1048,6 @@
           h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Hasta'), h('input', { type: 'date', style: { width: 'auto' }, onchange: e => { hasta = e.target.value; render(); } }),
           h('div', { class: 'tb-spacer' }), cnt),
         body),
-      footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cerrar')]
-    });
-  }
-  // Registro de actividad: todos los clics grabados. Acceso desde Configuración.
-  function formActividad() {
-    const all = H.getActividad().slice().reverse();   // más reciente primero
-    let q = '';
-    const body = h('div', {}); const cnt = h('span', { class: 's-sub' });
-    const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
-    function render() {
-      const ql = q.trim().toLowerCase();
-      const list = all.filter(a => !ql || [a.vista, a.inv, a.accion, a.cat].map(x => String(x || '')).join(' ').toLowerCase().includes(ql));
-      const sesiones = new Set(all.map(a => a.sesion).filter(Boolean)).size;
-      cnt.textContent = `${list.length} de ${all.length} clics · ${sesiones} sesión(es)`;
-      mount(body, list.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Fecha y hora'), h('th', {}, 'Vista'), h('th', {}, 'Categoría'), h('th', {}, 'N° Inv.'), h('th', {}, 'Acción'))),
-        h('tbody', {}, ...list.slice(0, 1500).map(a => h('tr', {},
-          h('td', { class: 'muted nowrap' }, fhora(a.ts)), h('td', {}, capCell(110, a.vista || '—')),
-          h('td', {}, h('span', { class: 'tag' }, a.cat || 'acción')),
-          h('td', { class: 'mono' }, a.inv || '—'), h('td', {}, capCell(340, a.accion || '—'))))))) : h('div', { class: 'empty' }, 'Sin actividad registrada todavía'));
-    }
-    render();
-    openDrawer({
-      title: 'Registro de actividad', wide: true,
-      body: h('div', {}, h('div', { class: 'filterbar' }, h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { q = e.target.value; render(); } }), h('div', { class: 'tb-spacer' }), cnt), body),
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cerrar')]
     });
   }
@@ -1871,9 +1916,10 @@
     const actions = [
       ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
       ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
-      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
+      [Grab.on ? 'Detener grabación y exportar' : 'Iniciar grabación', () => { closeCmdk(); Grab.toggle(); }, '⏺'],
       ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
     function render(q) {
@@ -1982,55 +2028,6 @@
   }
 
   // Hojas de trabajo legibles que se escriben en el Google Sheet (para usar el
-  // Resumen de uso para evaluar la aplicación en la planilla: clics, sesiones,
-  // tiempos por vista, acciones más usadas, por día y por hora. Devuelve AoA.
-  function resumenUso(actividad) {
-    const A = (actividad || []).filter(a => a && a.ts).slice().sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
-    if (!A.length) return [['USO DE LA APLICACIÓN'], [], ['Sin actividad registrada todavía. Usa la app y vuelve a sincronizar.']];
-    const CAP = 300; // s: huecos mayores se consideran inactividad (no se suman al tiempo de la vista)
-    const porVista = {}, porCat = {}, porAccion = {}, porDia = {}, porHora = {}, ses = {};
-    let prev = null;
-    A.forEach(a => {
-      const d = new Date(a.ts); if (isNaN(d)) return;
-      const v = a.vista || '—'; (porVista[v] = porVista[v] || { n: 0, seg: 0 }).n++;
-      porCat[a.cat || 'acción'] = (porCat[a.cat || 'acción'] || 0) + 1;
-      porAccion[a.accion || '—'] = (porAccion[a.accion || '—'] || 0) + 1;
-      porDia[a.ts.slice(0, 10)] = (porDia[a.ts.slice(0, 10)] || 0) + 1;
-      porHora[d.getHours()] = (porHora[d.getHours()] || 0) + 1;
-      const sid = a.sesion || '(sin sesión)'; const s = ses[sid] = ses[sid] || { ini: a.ts, fin: a.ts, n: 0 };
-      s.n++; if (a.ts > s.fin) s.fin = a.ts; if (a.ts < s.ini) s.ini = a.ts;
-      if (prev && prev.sesion === a.sesion) { let dt = (d - new Date(prev.ts)) / 1000; if (dt > 0) porVista[prev.vista || '—'].seg += Math.min(dt, CAP); }
-      prev = a;
-    });
-    const fmtT = s => s == null ? '—' : (s >= 3600 ? (s / 3600).toFixed(1) + ' h' : s >= 60 ? (s / 60).toFixed(1) + ' min' : Math.round(s) + ' s');
-    const fH = ts => { const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
-    const sesArr = Object.keys(ses).map(k => ({ id: k, dur: (new Date(ses[k].fin) - new Date(ses[k].ini)) / 1000, n: ses[k].n }));
-    const durs = sesArr.map(s => s.dur).sort((a, b) => a - b);
-    const prom = durs.length ? durs.reduce((m, x) => m + x, 0) / durs.length : 0;
-    const med = durs.length ? durs[Math.floor((durs.length - 1) / 2)] : 0;
-    const top = (obj, n) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n);
-    const rows = [];
-    rows.push(['USO DE LA APLICACIÓN · resumen automático para evaluar el uso']);
-    rows.push(['Generado', new Date().toLocaleString('es-CL')]);
-    rows.push(['Periodo', fH(A[0].ts) + '  →  ' + fH(A[A.length - 1].ts)]);
-    rows.push(['Total de clics', A.length], ['Sesiones', sesArr.length], ['Días activos', Object.keys(porDia).length]);
-    rows.push(['Clics por sesión (promedio)', sesArr.length ? +(A.length / sesArr.length).toFixed(1) : 0]);
-    rows.push(['Duración de sesión · promedio', fmtT(prom)], ['Duración de sesión · mediana', fmtT(med)]);
-    rows.push([], ['CLICS Y TIEMPO POR VISTA'], ['Vista', 'Clics', 'Tiempo activo aprox.']);
-    Object.keys(porVista).sort((a, b) => porVista[b].n - porVista[a].n).forEach(k => rows.push([k, porVista[k].n, fmtT(porVista[k].seg)]));
-    rows.push([], ['CLICS POR CATEGORÍA'], ['Categoría', 'Clics']);
-    top(porCat, 20).forEach(([k, v]) => rows.push([k, v]));
-    rows.push([], ['ACCIONES MÁS USADAS (top 15)'], ['Acción', 'Veces']);
-    top(porAccion, 15).forEach(([k, v]) => rows.push([k, v]));
-    rows.push([], ['CLICS POR DÍA'], ['Día', 'Clics']);
-    Object.keys(porDia).sort().forEach(k => rows.push([k, porDia[k]]));
-    rows.push([], ['CLICS POR HORA DEL DÍA'], ['Hora', 'Clics']);
-    for (let hh = 0; hh < 24; hh++) if (porHora[hh]) rows.push([String(hh).padStart(2, '0') + ' h', porHora[hh]]);
-    rows.push([], ['DURACIÓN DE CADA SESIÓN'], ['Sesión', 'Clics', 'Duración']);
-    sesArr.sort((a, b) => a.id.localeCompare(b.id)).slice(-50).forEach(s => rows.push([s.id, s.n, fmtT(s.dur)]));
-    return rows;
-  }
-
   // archivo sin la app). Devuelve [{name, rows(AOA), hidden, headerRow}].
   function cuadernoSheets() {
     const S = H.getState(); const hoy = H.hoyLocal();
@@ -2127,28 +2124,35 @@
       ]
     });
 
-    // ACTIVIDAD — registro de uso (clics) con sesión, categoría y Δ de tiempo.
-    const actAll = H.getActividad();
-    const prevTs = {};
-    const actRows = actAll.map(a => {
-      let delta = '';
-      if (a.sesion && prevTs[a.sesion]) { const dt = (new Date(a.ts) - new Date(prevTs[a.sesion])) / 1000; if (isFinite(dt) && dt >= 0) delta = Math.round(dt); }
-      if (a.sesion) prevTs[a.sesion] = a.ts;
-      let f = a.ts; try { const d = new Date(a.ts); if (!isNaN(d)) f = d.toLocaleString('es-CL'); } catch (e) {}
-      return [f, a.sesion || '', a.vista || '', a.inv || '', a.cat || '', a.accion || '', delta, a.usuario || 'Cristian'];
-    });
-    sheets.push({
-      name: 'Actividad', hidden: false, rows: [
-        ['Fecha y hora', 'Sesión', 'Vista', 'N° Inv.', 'Categoría', 'Acción', 'Δ s', 'Usuario'],
-        ...actRows.reverse().slice(0, 3000)
-      ]
-    });
-    // USO (RESUMEN) — métricas de uso y tiempos calculadas a partir de Actividad.
-    sheets.push({ name: 'Uso (resumen)', hidden: false, headerRow: 0, rows: resumenUso(actAll) });
     return sheets;
   }
 
   // ---- CONFIGURACIÓN ------------------------------------------------------
+  // Editor de contactos del servicio (reutilizable). Devuelve la sección.
+  function contactosEditor() {
+    const servicios = [...new Set(H.getState().equipos.map(e => e.servicio).filter(Boolean))].sort();
+    const box = h('div', { class: 's-bd flush' });
+    const render = () => {
+      const list = H.getContactos();
+      mount(box, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Servicio'), h('th', {}, 'Cargo'), h('th', {}, 'Nombre'), h('th', {}, 'Apellido'), h('th', {}, 'Anexo'), h('th', {}, 'Correo electrónico'), h('th', { class: 'shrink' }, ''))),
+        h('tbody', {}, ...list.map(c => {
+          const inp = (k, type, ph) => h('input', { type: type || 'text', value: c[k] || '', placeholder: ph || '', style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { [k]: e.target.value }); } });
+          const servSel = selectEl([['', '— todos los servicios —'], ...servicios.map(s => [s, s])], c.servicio || '', { style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { servicio: e.target.value }); } });
+          return h('tr', {}, h('td', {}, servSel), h('td', {}, inp('cargo', 'text', 'Cargo')), h('td', {}, inp('nombre', 'text', 'Nombre')),
+            h('td', {}, inp('apellido', 'text', 'Apellido')), h('td', {}, inp('anexo', 'text', 'Anexo')), h('td', {}, inp('correo', 'email', 'correo@hospital.cl')),
+            h('td', {}, h('button', { class: 'btn icon ghost sm', title: 'Eliminar contacto', onclick: () => { if (window.confirm('¿Eliminar este contacto?')) { H.eliminarContacto(c.id); render(); } } }, svg(ic.x, 14))));
+        })))));
+    };
+    render();
+    return h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.users, 16), h('h3', {}, 'Contactos del servicio'), h('span', { class: 's-sub' }, 'supervisor · encargado de equipos · jefe CCRR')),
+      box,
+      h('div', { class: 's-bd' }, h('button', { class: 'btn sm', onclick: () => { H.agregarContacto({ cargo: '' }); render(); } }, svg(ic.plus, 14), 'Agregar contacto'),
+        h('span', { class: 'faint', style: { fontSize: '11px', marginLeft: '8px' } }, 'Asigna un servicio para que el contacto aparezca en la ficha de sus equipos. "Todos los servicios" = contacto general.')));
+  }
+  VIEWS.contactos = function () { return h('div', { class: 'view-narrow' }, contactosEditor()); };
+
   VIEWS.configuracion = function () {
     const root = h('div', { class: 'view-narrow' });
     const urlIn = h('input', { type: 'text', value: Cloud.url, placeholder: 'https://script.google.com/macros/s/.../exec' });
@@ -2214,38 +2218,10 @@
       h('button', { class: 'btn', title: 'Deja una sola MP por equipo y mes (conserva la oficial / más reciente y anula el resto)', onclick: () => { const n = nDup(); if (!n) return toast('No hay MP duplicadas', 'success'); if (!window.confirm(`¿Consolidar las MP duplicadas? Se conservará una por equipo y mes (la oficial o la más reciente) y se anularán las demás.`)) return; const k = H.consolidarMPDuplicadas(); toast(k ? `${k} MP duplicada(s) anulada(s)` : 'Sin duplicadas que consolidar', 'success'); renderMaint(); refreshChrome(); } }, `Quitar MP duplicadas (${nDup()})`),
       h('button', { class: 'btn', onclick: () => { const k = H.normalizarTiposEvento(); H.save(); toast(k ? `${k} etiquetas normalizadas` : 'Sin etiquetas que normalizar', 'success'); } }, 'Normalizar tipos de evento'),
       h('button', { class: 'btn', onclick: () => { const k = H.reconstruirCiclos(); H.save(); toast(k ? `${k} ciclos reconstruidos` : 'Ciclos ya consistentes', 'success'); refreshChrome(); } }, 'Reconstruir ciclos'),
-      h('button', { class: 'btn ghost', title: 'Auditoría: quién cambió qué y cuándo', onclick: () => formHistorialCambios() }, 'Historial de cambios'),
-      h('button', { class: 'btn ghost', title: 'Registro de uso: todos los clics grabados', onclick: () => formActividad() }, 'Registro de actividad')));
+      h('button', { class: 'btn ghost', title: 'Auditoría: quién cambió qué y cuándo', onclick: () => formHistorialCambios() }, 'Historial de cambios')));
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
-
-    // 3b) Contactos del servicio (vinculados a un servicio clínico)
-    const servicios = [...new Set(H.getState().equipos.map(e => e.servicio).filter(Boolean))].sort();
-    const contactosBox = h('div', { class: 's-bd flush' });
-    const renderContactos = () => {
-      const list = H.getContactos();
-      mount(contactosBox, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Servicio'), h('th', {}, 'Cargo'), h('th', {}, 'Nombre'), h('th', {}, 'Apellido'), h('th', {}, 'Anexo'), h('th', {}, 'Correo electrónico'), h('th', { class: 'shrink' }, ''))),
-        h('tbody', {}, ...list.map(c => {
-          const inp = (k, type, ph) => h('input', { type: type || 'text', value: c[k] || '', placeholder: ph || '', style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { [k]: e.target.value }); } });
-          const servSel = selectEl([['', '— todos los servicios —'], ...servicios.map(s => [s, s])], c.servicio || '', { style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { servicio: e.target.value }); } });
-          return h('tr', {},
-            h('td', {}, servSel),
-            h('td', {}, inp('cargo', 'text', 'Cargo')),
-            h('td', {}, inp('nombre', 'text', 'Nombre')),
-            h('td', {}, inp('apellido', 'text', 'Apellido')),
-            h('td', {}, inp('anexo', 'text', 'Anexo')),
-            h('td', {}, inp('correo', 'email', 'correo@hospital.cl')),
-            h('td', {}, h('button', { class: 'btn icon ghost sm', title: 'Eliminar contacto', onclick: () => { if (window.confirm('¿Eliminar este contacto?')) { H.eliminarContacto(c.id); renderContactos(); } } }, svg(ic.x, 14))));
-        })))));
-    };
-    renderContactos();
-    root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, svg(ic.users, 16), h('h3', {}, 'Contactos del servicio'), h('span', { class: 's-sub' }, 'vinculados al servicio clínico · supervisor · encargado de equipos · jefe CCRR')),
-      contactosBox,
-      h('div', { class: 's-bd' }, h('button', { class: 'btn sm', onclick: () => { H.agregarContacto({ cargo: '' }); renderContactos(); } }, svg(ic.plus, 14), 'Agregar contacto'),
-        h('span', { class: 'faint', style: { fontSize: '11px', marginLeft: '8px' } }, 'Asigna un servicio para que el contacto aparezca en la ficha de sus equipos. "Todos los servicios" = contacto general.'))));
 
     // 4) Respaldo — el Google Sheet ES el respaldo. Si está conectado, no se ofrece copia
     // JSON (sería redundante). La copia JSON queda solo como salvavidas SIN conexión.
@@ -2492,6 +2468,7 @@
       ['Eventos / bitácora', () => go('eventos')],
       ['MP del mes', () => go('asignaciones')],
       ['Cumplimiento', () => go('cumplimiento')],
+      ['Contactos', () => go('contactos')],
       ['Exportar Excel', () => excelExport()],
       ['Configuración', () => go('configuracion')]
     ]);
@@ -2515,7 +2492,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
+    const titles = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', contactos: 'Contactos del servicio', configuracion: 'Configuración' };
     const t = titles[view] || 'Gestión Equipos Críticos HHHA';
     const tt = $('#tb-title'); if (tt) tt.textContent = t;
     document.title = 'Gestión Equipos Críticos HHHA' + (view === 'inicio' ? '' : ' · ' + t);
@@ -2554,6 +2531,7 @@
         h('div', { class: 'tb-spacer' }),
         h('div', { class: 'search-pill big', onclick: () => openCmdk() }, svg(ic.search, 16), h('span', { class: 'muted' }, 'Buscar equipo o acción…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
         h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', id: 'btn-grab', title: 'Iniciar grabación de la sesión', onclick: () => Grab.toggle() }, h('span', { class: 'rec-dot' }), h('span', { class: 's-hide' }, 'Grabar')),
         h('button', { class: 'btn icon ghost', title: 'Más vistas', onclick: ev => masMenu(ev.currentTarget) }, svg(ic.menu, 18)),
         h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
         h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
@@ -2569,21 +2547,10 @@
     setTimeout(recordatoriosAlAbrir, 600);
     if (Cloud.auto && Cloud.connected) { setTimeout(() => { Cloud.pull().then(r => { if (r && r.ok) { renderView(); refreshChrome(); toast('Sincronizado desde Google Sheets', 'success'); } }).catch(e => toast('Google Sheets: ' + e.message, 'error')); }, 400); }
 
-    window.addEventListener('hashchange', () => { if (suppressHash) { suppressHash = false; return; } fromHash(); renderView(); syncNav(); });
-    // Registro de actividad (para evaluar el uso en la planilla): graba todos los
-    // clics con su categoría y sesión. Se sincroniza con moderación (máx. 1/30 s)
-    // aunque no haya cambios de datos, para que las sesiones de solo-navegación
-    // también queden en el Sheet.
-    H.logActividad('Sesión iniciada', { vista: view, cat: 'sesión', sesion: SESION });
-    let _lastActSync = Date.now(), _actSyncTimer = null;
-    function syncActividad() {
-      if (!Cloud.connected || !Cloud.auto) return;
-      const espera = 30000 - (Date.now() - _lastActSync);
-      if (espera > 0) { clearTimeout(_actSyncTimer); _actSyncTimer = setTimeout(syncActividad, espera + 50); return; }
-      _lastActSync = Date.now(); Cloud.push().catch(() => {});
-    }
+    window.addEventListener('hashchange', () => { if (suppressHash) { suppressHash = false; return; } fromHash(); Grab.log('pantalla', 'Abrir ' + (TIT_VISTA[view] || view) + (params.inv ? ' · ' + params.inv : '')); renderView(); syncNav(); });
+    // Grabación: SOLO mientras está activa se registran los clics (qué hace el
+    // usuario) y los errores. Fuera de grabación no se registra ni sincroniza nada.
     function categoriaDe(el) {
-      if (el.closest('.topnav')) return 'navegación';
       if (el.closest('.tabs')) return 'pestaña';
       if (el.closest('.seg')) return 'filtro';
       if (el.matches('.alert-card, .kpi, .kb-card') || el.closest('.alert-card, .kpi, .kb-card')) return 'tarjeta';
@@ -2591,19 +2558,20 @@
       return 'acción';
     }
     document.addEventListener('click', e => {
+      if (!Grab.on) return;
       try {
         const el = e.target && e.target.closest && e.target.closest('button, a, .link, .nav-item, .alert-card, .type-card, .tabs button, .seg button, .kpi, .kb-card, [role="button"]');
         if (!el) return;
+        if (el.id === 'btn-grab') return; // no registrar el propio botón de grabación
         let label = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || '';
-        if (!label) { // texto del control, sin insignias/contadores/descripciones secundarias
-          let src = el; try { src = el.cloneNode(true); src.querySelectorAll('.badge-count, .pc-inv, .kbd, small, sup').forEach(n => n.remove()); } catch (_) {}
-          label = src.textContent || '';
-        }
+        if (!label) { let src = el; try { src = el.cloneNode(true); src.querySelectorAll('.badge-count, .pc-inv, .kbd, small, sup').forEach(n => n.remove()); } catch (_) {} label = src.textContent || ''; }
         label = String(label).replace(/\s+/g, ' ').trim();
         if (!label) label = (typeof el.className === 'string' && el.className) ? el.className.split(' ')[0] : 'control';
-        if (H && H.logActividad) { H.logActividad(label, { vista: view, inv: params && params.inv, cat: categoriaDe(el), sesion: SESION }); syncActividad(); }
-      } catch (err) { /* el registro nunca debe romper la UI */ }
+        Grab.log('clic', label, { cat: categoriaDe(el) });
+      } catch (err) { /* la grabación nunca debe romper la UI */ }
     }, true);
+    // Errores de ejecución: se registran si hay grabación en curso (para revisarlos).
+    window.addEventListener('error', ev => { try { Grab.log('error', (ev.message || 'Error') + (ev.filename ? ' @' + String(ev.filename).split('/').pop() + ':' + ev.lineno : '')); } catch (e) {} });
     document.addEventListener('keydown', e => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); cmdkEl ? closeCmdk() : openCmdk(); }
       else if (e.key === 'Escape') { if (cmdkEl) closeCmdk(); else if (drawerOpen) closeDrawer(); else closePop(); }

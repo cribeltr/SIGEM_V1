@@ -209,7 +209,7 @@ function writeSheets(sheets) {
 // Lista blanca de nombres SIGEM conocidos: SÓLO se eliminan esos. Cualquier hoja que el
 // usuario haya creado a mano (otro nombre) NO se toca. Si en el futuro se renombran hojas,
 // agrega aquí el nombre antiguo. Las del envío actual y las de sistema ("_") se conservan.
-var SIGEM_RETIRADAS = ['Correctivos', 'MP por mes', 'En servicio técnico', 'No operativos'];
+var SIGEM_RETIRADAS = ['Correctivos', 'MP por mes', 'En servicio técnico', 'No operativos', 'Actividad', 'Uso (resumen)'];
 var SIGEM_RETIRADAS_PREFIJO = ['Plan anual MP', 'Hoja de ruta'];
 function esHojaSigemRetirada(name) {
   if (SIGEM_RETIRADAS.indexOf(name) !== -1) return true;

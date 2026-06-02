@@ -126,6 +126,13 @@ body {
 /* búsqueda prominente (es la navegación principal) */
 .search-pill.big { flex: 1 1 420px; min-width: 200px; max-width: 560px; padding: 8px 14px; border-radius: 10px; }
 
+/* Botón de grabación de sesión */
+#btn-grab { flex: 0 0 auto; gap: 7px; }
+#btn-grab .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--noop); flex: 0 0 auto; }
+#btn-grab.rec-on { background: var(--noop); border-color: var(--noop); color: #fff; }
+#btn-grab.rec-on .rec-dot { background: #fff; animation: rec-pulse 1.1s ease-in-out infinite; }
+@keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
 /* ----------------------------- Inicio (calmo) --------------------------- */
 .home { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; padding: 6px 2px 48px; }
 .home-hi { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
