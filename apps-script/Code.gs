@@ -59,6 +59,56 @@ function apiSave(payload) {
   return { ok: true, ts: new Date().toISOString() };
 }
 
+/* ===================== ARCHIVOS EN GOOGLE DRIVE ============================
+ * Estructura: carpeta raíz "Gestión Equipos Críticos HHHA · Archivos" (su id se
+ * guarda en _SIGEM_META) y una SUBCARPETA por equipo (nombre = N° inventario).
+ * Requiere el permiso de Drive (la 1ª vez Apps Script lo pedirá al autorizar). */
+function _driveRoot() {
+  var id = readMeta('driveRoot');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var name = 'Gestión Equipos Críticos HHHA · Archivos';
+  var it = DriveApp.getFoldersByName(name);
+  var f = it.hasNext() ? it.next() : DriveApp.createFolder(name);
+  writeMeta('driveRoot', f.getId());
+  return f;
+}
+function _equipoFolder(inv, create) {
+  var root = _driveRoot();
+  var it = root.getFoldersByName(String(inv));
+  if (it.hasNext()) return it.next();
+  return create ? root.createFolder(String(inv)) : null;
+}
+function _fileInfo(f) { return { id: f.getId(), name: f.getName(), url: f.getUrl(), fecha: f.getLastUpdated().toISOString(), size: f.getSize() }; }
+
+// Sube un archivo a la carpeta del equipo. p = {inv, nombre, mime, dataB64}
+function apiSubirArchivo(p) {
+  p = p || {};
+  if (!p.inv || !p.nombre || !p.dataB64) return { ok: false, error: 'Datos incompletos' };
+  try {
+    var bytes = Utilities.base64Decode(p.dataB64);
+    var blob = Utilities.newBlob(bytes, p.mime || 'application/octet-stream', p.nombre);
+    var file = _equipoFolder(p.inv, true).createFile(blob);
+    return { ok: true, archivo: _fileInfo(file) };
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+// Lista los archivos de la carpeta del equipo. Devuelve {ok, archivos:[...]}
+function apiArchivosDe(inv) {
+  try {
+    var folder = _equipoFolder(inv, false);
+    if (!folder) return { ok: true, archivos: [] };
+    var it = folder.getFiles(), out = [];
+    while (it.hasNext()) out.push(_fileInfo(it.next()));
+    out.sort(function (a, b) { return (b.fecha || '').localeCompare(a.fecha || ''); });
+    return { ok: true, archivos: out };
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+// Envía un archivo a la papelera. p = {id}
+function apiEliminarArchivo(p) {
+  p = p || {};
+  try { if (p.id) DriveApp.getFileById(p.id).setTrashed(true); return { ok: true }; }
+  catch (e) { return { ok: false, error: String(e) }; }
+}
+
 function doPost(e) {
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');

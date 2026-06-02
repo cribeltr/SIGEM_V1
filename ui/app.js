@@ -56,7 +56,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-02 · v1.2';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-02 · v1.3';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -110,6 +110,9 @@
       return h('option', { value: val, selected: String(val) === String(value) ? true : false }, lbl);
     }));
   }
+  // Acota el ancho real de una celda envolviendo el contenido en un <div> con max-width
+  // (el max-width en <td> no es fiable en tablas auto). Evita el scroll horizontal.
+  function capCell(maxW, ...kids) { return h('div', { style: { maxWidth: maxW + 'px', whiteSpace: 'normal', overflowWrap: 'anywhere' } }, ...kids.filter(Boolean)); }
 
   // ----------------------------- engine UI/env wiring -----------------------
   H.configure({
@@ -558,10 +561,10 @@
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
           const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
             h('td', { onclick: ev => ev.stopPropagation() }, chk),
-            h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
-            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.fam || '—'), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'muted' }, capCell(160, e.servicio || '—')),
+            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, capCell(130, e.fam || '—')), h('td', { class: 'muted' }, e.freq || '—'),
             h('td', {}, mpMesBadge(e)),
-            h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, H.encargadoDe(e) || 'sin asignar'),
+            h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, capCell(140, H.encargadoDe(e) || 'sin asignar')),
             h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
           return tr;
         }))
@@ -686,6 +689,8 @@
             : h('div', { class: 'faint' }, 'Sin ciclo abierto'))),
         h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, `MP ${YEAR}`)),
           h('div', { class: 's-bd' }, miniGantt(eq, YEAR))),
+        h('div', { class: 'section' }, h('div', { class: 's-hd' }, svg(ic.dl, 15), h('h3', {}, 'Archivos del equipo'), h('span', { class: 's-sub' }, (eq.adjuntos || []).length || '')),
+          h('div', { class: 's-bd' }, adjuntosBox(eq, eq.inv))),
         notasPanel(eq)));
   }
   function notasPanel(eq) {
@@ -1041,9 +1046,7 @@
     const dup = H.idsMPDuplicadas();
     const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
     const stop = ev => ev.stopPropagation();
-    // Limita el ancho real de una celda (el max-width en <td> no es fiable en tablas auto;
-    // un <div> interno sí lo respeta) → evita la barra de scroll horizontal.
-    const cap = (w, ...kids) => h('div', { style: { maxWidth: w + 'px', whiteSpace: 'normal', overflowWrap: 'anywhere' } }, ...kids.filter(Boolean));
+    const cap = capCell;
     const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
     const pendCell = e => {
       const ps = pendsDe(e);
@@ -1067,6 +1070,7 @@
         !compact ? h('td', { class: 'mono link', onclick: ev => { stop(ev); go('equipo', { inv: e.inv }); } }, e.inv) : null,
         h('td', {}, cap(compact ? 132 : 210, H.etiquetaTipoEvento(e),
           dup.has(e.id) ? h('span', { class: 'tag', style: { marginLeft: '5px', color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' }, title: 'Hay otra MP del mismo equipo en este mes' }, 'duplicada') : null,
+          (e.adjuntos && e.adjuntos.length) ? h('span', { class: 'tag', style: { marginLeft: '5px' }, title: e.adjuntos.length + ' archivo(s) adjunto(s)' }, '📎' + e.adjuntos.length) : null,
           (compact && !e.anulado && e.oficial !== 'Sí') ? h('span', { class: 'tag', style: { marginLeft: '5px' } }, 'borrador') : null)),
         h('td', { class: 'mono' }, e.resultado || '—'),
         h('td', {}, e.estado ? estadoPill(e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico')) : '—'),
@@ -1152,7 +1156,7 @@
           const tr = h('tr', { class: mpSel.has(e.inv) ? 'sel' : '' },
             h('td', { onclick: ev => ev.stopPropagation() }, chk),
             h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv),
-            h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', {}, capCell(190, e.equipo || '—')), h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, e.freq || '—'),
             h('td', { class: 'mono' }, (e.registro && e.registro[MESES[m]] && e.registro[MESES[m]].P) || (e.prog || {})[MESES[m]] || '—'),
             h('td', {}, r ? h('span', { class: 'pill ' + mpResPillCls(r) }, r) : h('span', { class: 'faint' }, '—')),
             h('td', {}, mpEstadoBadge(e, y, m)),
@@ -1404,12 +1408,36 @@
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: save }, 'Guardar MP')]
     });
   }
+  // Sube un archivo a Drive (carpeta del equipo) vía Apps Script. Devuelve {id,name,url,...}.
+  async function subirArchivoDrive(inv, file) {
+    const dataB64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('No se pudo leer el archivo')); r.readAsDataURL(file); });
+    const r = await gasCall('apiSubirArchivo', { inv, nombre: file.name, mime: file.type || 'application/octet-stream', dataB64 });
+    if (!r.ok) throw new Error(r.error || 'Error al subir');
+    return r.archivo;
+  }
+  // UI reutilizable de adjuntos. `owner` (evento o equipo) guarda owner.adjuntos[].
+  function adjuntosBox(owner, inv) {
+    owner.adjuntos = owner.adjuntos || [];
+    const box = h('div', {});
+    const render = () => mount(box, owner.adjuntos.length
+      ? h('div', { class: 'row-list' }, ...owner.adjuntos.map((a, i) => h('div', { class: 'mini-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+        svg(ic.dl, 13),
+        h('a', { href: a.url || '#', target: '_blank', rel: 'noopener', style: { flex: '1', color: 'var(--accent)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, onclick: ev => ev.stopPropagation() }, a.name),
+        h('button', { class: 'btn icon ghost sm', title: 'Quitar archivo', onclick: () => { if (!window.confirm('¿Quitar "' + a.name + '" de Drive?')) return; gasCall('apiEliminarArchivo', { id: a.id }).catch(() => {}); owner.adjuntos.splice(i, 1); H.save(); render(); } }, svg(ic.x, 13)))))
+      : h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Sin archivos adjuntos.'));
+    render();
+    if (!isGAS()) return h('div', {}, box, h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '5px' } }, '📎 Para adjuntar archivos a Google Drive, abre la app servida desde Apps Script (URL …/exec).'));
+    const inp = h('input', { type: 'file', style: { display: 'none' }, onchange: async ev => { const f = ev.target.files[0]; if (!f) return; const b = ev.target; toast('Subiendo ' + f.name + '…', ''); try { const a = await subirArchivoDrive(inv, f); owner.adjuntos.push(a); H.save(); toast('Archivo adjuntado a Drive', 'success'); render(); } catch (e) { toast('Error: ' + e.message, 'error'); } b.value = ''; } });
+    return h('div', {}, box, h('div', { style: { marginTop: '7px' } }, inp, h('button', { class: 'btn sm', onclick: () => inp.click() }, svg(ic.up, 14), 'Adjuntar archivo')));
+  }
   function formNuevoEvento(opts) {
     let invSel = opts.inv || ''; let tipo = opts.tipo || null;
     const body = h('div', {});
     function build() {
       const eq = invSel ? H.findEquipo(invSel) : null;
       const ciclosAb = invSel ? H.ciclosAbiertosDe(invSel) : [];
+      // Último "Envío a servicio técnico" del equipo (para precargar el N° de envío en la Recepción).
+      const ultimoEnvio = invSel ? H.eventosDe(invSel).filter(e => e.tipo === 'Envío a servicio técnico' && e.nEnvio).slice(-1)[0] : null;
       const invInput = h('input', { type: 'text', list: 'eqlist', value: invSel, placeholder: 'N° Inventario', oninput: e => { invSel = e.target.value.trim(); if (H.findEquipo(invSel)) build(); } });
       const dl = h('datalist', { id: 'eqlist' }, ...H.getState().equipos.slice(0, 300).map(e => h('option', { value: e.inv }, `${e.inv} — ${e.equipo}`)));
       const typeGrid = h('div', { class: 'type-grid' }, ...TIPOS_EVENTO.map(t => h('button', { class: 'type-card ' + (tipo === t.label ? 'on' : ''), onclick: () => { tipo = t.label; build(); } }, h('b', {}, t.label), h('small', {}, t.desc))));
@@ -1423,7 +1451,7 @@
       else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], opts.tipoVisita || 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], opts.estado || 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('N° Informe / Folio', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
       else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Oficial', oficial)), field('Observación', obs)); }
       else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('N° Informe / Folio', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
-      else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', value: ultimoEnvio ? (ultimoEnvio.nEnvio || '') : '', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Estado', estado)), ultimoEnvio ? h('div', { class: 'notice info' }, `N° de envío tomado del envío a servicio técnico del ${fmtFecha(ultimoEnvio.fecha)}.`) : null, field('Observación', obs), field('Oficial', oficial)); }
       else if (tipo === 'Reparación') { const folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'), repuestos = h('input', { type: 'text', placeholder: 'Repuestos' }); ctrls = { folio, estado, repuestos }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Informe / Folio', folio), field('Estado', estado)), field('Repuestos', repuestos), field('Descripción', obs), field('Oficial', oficial)); }
       else if (tipo === 'Mantención preventiva') { const resultado = selectEl(['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'Baja', 'NU', 'No'], 'Si'), mpEstado = selectEl([['operativo', 'Operativo'], ['no operativo', 'No operativo']], 'operativo'), ejec2 = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], ''); ctrls = { resultado, _mpEstado: mpEstado, ejecutor2: ejec2 }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Resultado', resultado), field('Estado (si "Si")', mpEstado)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('Ejecutor 2', ejec2)), field('Observación', obs), field('Oficial', oficial), h('div', { class: 'notice' }, 'C1–C8 → pendiente de reprogramación · NU → "Localizar equipo" · Baja → equipo a baja.')); }
 
@@ -1470,7 +1498,8 @@
       body: h('div', {}, eqMini(eq),
         h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('Oficial', oficial)),
         extraFields.length ? h('div', { class: 'grid-2' }, ...extraFields) : null,
-        field('Observación / informe', obs), estadoNota),
+        field('Observación / informe', obs), estadoNota,
+        field('Adjuntos (Google Drive)', adjuntosBox(e, e.inv))),
       footer: [h('button', { class: 'btn', onclick: closeDrawer }, 'Cancelar'), h('button', { class: 'btn primary', onclick: () => { const cambios = { fecha: fecha.value, obs: obs.value, ejecutor: ejecutor.value, oficial: oficial.value }; for (const k in extraInputs) cambios[k] = extraInputs[k].value; H.editarEvento(e, cambios); toast('Evento actualizado', 'success'); closeDrawer(); } }, 'Guardar')]
     });
   }
