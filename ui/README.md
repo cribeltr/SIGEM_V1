@@ -43,8 +43,8 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
 
 ## Vistas
 - **Cola de trabajo** — alertas + MP del mes (con "MP masiva") + panel **Equipos caídos**
-  (no operativos / en servicio técnico, ordenados por días en estado, con la última gestión
-  y los días sin gestión) + pendientes accionables.
+  (no operativos / en servicio técnico, con la última gestión y los días sin gestión,
+  ordenable por **días en estado** o **días sin gestión**) + pendientes accionables.
 - **Equipos** — tabla densa filtrable (estado/servicio/familia/búsqueda), selección
   múltiple → **registrar MP** en lote, columna "MP del mes".
 - **Equipo (ficha)** — cabecera con estado + datos; pestañas **Resumen · Matriz MP ·
