@@ -709,7 +709,8 @@
   function cambiarEstadoPend(p, nuevo) {
     const antes = p.estado;
     p.estado = nuevo;
-    if (nuevo === 'cerrado' && !p.fechaCierre) p.fechaCierre = hoyLocal();
+    if (nuevo === 'cerrado') { if (!p.fechaCierre) p.fechaCierre = hoyLocal(); }
+    else p.fechaCierre = null;   // reabrir limpia la fecha de cierre
     audit('pendiente', p.id, 'estado', antes, nuevo);
     save();
     UI.onChange();
@@ -1631,7 +1632,8 @@
     p.desc = cambios.desc;
     p.fechaComp = cambios.fechaComp || null;
     p.proxRecord = cambios.proxRecord || null;
-    if (p.estado === 'cerrado' && !p.fechaCierre) p.fechaCierre = hoyLocal();
+    if (p.estado === 'cerrado') { if (!p.fechaCierre) p.fechaCierre = hoyLocal(); }
+    else p.fechaCierre = null;   // reabrir limpia la fecha de cierre
     save();
     UI.onChange();
     return { ok: true };
@@ -1720,6 +1722,12 @@
     const old = eq.estado;
     eq.estado = 'baja'; eq.estadoDesde = fecha;
     audit('equipo', eq.inv, 'estado', old, 'baja');
+    // Cerrar los ciclos correctivos abiertos del equipo (un equipo en baja no puede
+    // tener un ciclo en curso).
+    state.ciclos.filter(c => c.inv === eq.inv && c.estado === 'abierto').forEach(c => {
+      c.estado = 'cerrado'; c.fechaCierre = fecha; c.motivoCierre = 'Cierre por baja del equipo';
+      audit('ciclo', c.folio || ('#' + c.id), 'estado', 'abierto', 'cerrado');
+    });
     // Cerrar pendientes del equipo
     state.pendientes.filter(p => p.inv === eq.inv && p.estado !== 'cerrado').forEach(p => {
       p.estado = 'cerrado'; p.fechaCierre = fecha;
