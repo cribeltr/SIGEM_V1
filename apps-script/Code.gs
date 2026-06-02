@@ -125,9 +125,10 @@ function isSystem(name) { return String(name).charAt(0) === '_'; }
 
 // Escribe las hojas de trabajo legibles que envía la app: [{name, rows, hidden, headerRow}]
 function writeSheets(sheets) {
-  var order = [];
+  var order = [], sent = {};
   (sheets || []).forEach(function (spec) {
     if (!spec || !spec.name) return;
+    sent[spec.name] = true;
     var sh = sheetByName(spec.name, true);
     sh.clear();
     var rows = spec.rows || [];
@@ -151,6 +152,32 @@ function writeSheets(sheets) {
     else { sh.showSheet(); order.push(spec.name); }
   });
   arrangeWorkbook(order);
+  pruneRetiredSheets(sent);
+}
+
+// Borra hojas que SIGEM generó en versiones anteriores y hoy ya NO envía (huérfanas).
+// Lista blanca de nombres SIGEM conocidos: SÓLO se eliminan esos. Cualquier hoja que el
+// usuario haya creado a mano (otro nombre) NO se toca. Si en el futuro se renombran hojas,
+// agrega aquí el nombre antiguo. Las del envío actual y las de sistema ("_") se conservan.
+var SIGEM_RETIRADAS = ['Correctivos', 'MP por mes', 'En servicio técnico', 'No operativos'];
+var SIGEM_RETIRADAS_PREFIJO = ['Plan anual MP', 'Hoja de ruta'];
+function esHojaSigemRetirada(name) {
+  if (SIGEM_RETIRADAS.indexOf(name) !== -1) return true;
+  for (var i = 0; i < SIGEM_RETIRADAS_PREFIJO.length; i++) {
+    if (name.indexOf(SIGEM_RETIRADAS_PREFIJO[i]) === 0) return true;
+  }
+  return false;
+}
+function pruneRetiredSheets(sent) {
+  sent = sent || {};
+  var spread = ss();
+  spread.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (sent[name] || isSystem(name)) return;        // hoja viva del envío actual o de sistema → conservar
+    if (!esHojaSigemRetirada(name)) return;          // no es una hoja SIGEM conocida → es del usuario → conservar
+    if (spread.getSheets().length <= 1) return;      // nunca dejar el libro sin hojas
+    try { spread.deleteSheet(sh); } catch (e) {}
+  });
 }
 
 // Deja las hojas de trabajo (en 'order') visibles y al frente, y las de sistema
