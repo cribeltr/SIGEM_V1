@@ -2396,7 +2396,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b23';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b24';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2632,7 +2632,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const content = h('div', {});
     const paint = () => mount(content, modo === 'pendientes' ? boardPendientes() : modo === 'correctivos' ? boardCorrectivos() : boardEstado());
     const seg = h('div', { class: 'seg' }, ...[['estado', 'Por estado'], ['pendientes', 'Pendientes'], ['correctivos', 'Correctivos']].map(([v, l]) =>
-      h('button', { class: modo === v ? 'on' : '', onclick: e => { if (modo === v) return; modo = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); paint(); } }, l)));
+      h('button', { class: modo === v ? 'on' : '', onclick: e => { if (modo === v) return; modo = params.board = v; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); paint(); } }, l)));
     paint();
     return h('div', {}, h('div', { class: 'filterbar', style: { paddingBottom: '4px' } }, h('span', { class: 'faint', style: { fontSize: '11px', fontWeight: '700', letterSpacing: '.3px' } }, 'TABLERO'), seg), content);
   };
