@@ -145,6 +145,7 @@
     view = v; params = p || {}; kbList = null;
     const newHash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : '');
     if (location.hash !== newHash) { suppressHash = true; location.hash = newHash; }
+    try { if (H && H.logActividad) H.logActividad('Abrir: ' + v + (p && p.inv ? ' · ' + p.inv : ''), { cat: 'navegación', vista: v, inv: p && p.inv, sesion: SESION }); } catch (e) {}
     renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0);
   }
   function fromHash() {
@@ -159,7 +160,9 @@
   const VIEWS = {};
 
   // ---- INICIO: cola de trabajo --------------------------------------------
-  VIEWS.inicio = function () {
+  // Panel denso de control (alertas + Mi día + MP + caídos). Ya NO es la pantalla
+  // de inicio: queda accesible bajo demanda (búsqueda / menú "Más").
+  VIEWS.panel = function () {
     const S = H.getState();
     const noop = S.equipos.filter(e => e.estado === 'no_operativo');
     const st = S.equipos.filter(e => e.estado === 'en_servicio_tecnico');
@@ -296,6 +299,84 @@
         caidos.length ? expCaidos : null,
         caidos.length ? h('button', { class: 'btn sm', onclick: () => go('equipos', { alerta30: 1 }) }, 'Ver +30 días') : null),
       h('div', { class: 's-bd flush' }, caidos.length ? caidosWrap : h('div', { class: 'empty' }, '✓ Sin equipos caídos'))));
+
+    return root;
+  };
+
+  // ============================ INICIO (pantalla simple del día) ============
+  // Dos bloques: arriba "Registrar" (eventos + maestro), abajo "Pendientes"
+  // priorizados con la regla de los 3 días. Todo lo demás se abre por búsqueda.
+  function nombreCorto(s) { return String(s || '').split(' ').slice(0, 2).join(' '); }
+  function delegarPend(p, anchor) {
+    popover(anchor, EJECUTORES.map(x => [nombreCorto(x), () => {
+      H.actualizarPendiente(p, { tipo: p.tipo, estado: p.estado === 'no_iniciado' ? 'en_proceso' : p.estado, ejecutor: x, desc: p.desc, fechaComp: p.fechaComp, proxRecord: p.proxRecord });
+      H.agregarSeguimiento(p, 'Delegado a ' + x);
+      toast('Delegado a ' + nombreCorto(x), 'success'); scheduleRefresh();
+    }]));
+  }
+  VIEWS.inicio = function () {
+    const S = H.getState();
+    const hoy = H.hoyLocal();
+    const root = h('div', { class: 'home' });
+
+    // Saludo discreto
+    const hh = new Date().getHours();
+    const saludo = hh < 12 ? 'Buenos días' : hh < 20 ? 'Buenas tardes' : 'Buenas noches';
+    let fechaLarga = hoy; try { fechaLarga = new Date(hoy + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) {}
+    root.appendChild(h('div', { class: 'home-hi' }, h('h1', {}, saludo), h('span', { class: 'home-date' }, fechaLarga)));
+
+    // === Tarea puntual del mes: asignación de MP (aparece solo si hay sin asignar) ===
+    const keyMes = `${YEAR}-${String(MONTH + 1).padStart(2, '0')}`;
+    const asig = (S.asignacionesMP || {})[keyMes] || {};
+    const progMes = S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]));
+    const sinAsignar = progMes.filter(e => !asig[e.inv]);
+    if (sinAsignar.length) {
+      root.appendChild(h('div', { class: 'home-task', onclick: () => go('asignaciones') },
+        h('span', { class: 'ht-ico' }, svg(ic.asignaciones, 20)),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { class: 'ht-title' }, 'Asignación del mes · ' + MES_ESP(MONTH)),
+          h('div', { class: 'ht-sub' }, `Hay ${sinAsignar.length} equipo(s) programado(s) sin responsable. Distribúyelos entre los ejecutores.`)),
+        h('button', { class: 'btn primary', onclick: e => { e.stopPropagation(); go('asignaciones'); } }, 'Asignar')));
+    }
+
+    // === BLOQUE 1 · Registrar ===
+    const primarios = ['Mantención preventiva', 'Solicitud de trabajo', 'Envío a servicio técnico', 'Recepción'];
+    const otros = ['Visita técnica', 'Orden de Compra', 'Reparación'];
+    const regBtn = (label, primary) => h('button', { class: 'reg-btn' + (primary ? ' primary' : ''), onclick: () => formNuevoEvento({ tipo: label }) }, svg(ic.plus, primary ? 17 : 15), h('span', {}, label));
+    root.appendChild(h('div', { class: 'home-sec' },
+      h('h2', {}, 'Registrar'),
+      h('div', { class: 'reg-grid' }, ...primarios.map(l => regBtn(l, true))),
+      h('div', { class: 'reg-grid sec' }, ...otros.map(l => regBtn(l, false)),
+        h('button', { class: 'reg-btn', onclick: () => importarMaestro(() => scheduleRefresh()) }, svg(ic.up, 15), h('span', {}, 'Cargar archivo maestro')))));
+
+    // === BLOQUE 2 · Pendientes (priorizados, regla de 3 días) ===
+    const pend = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const baseDe = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean).sort(); const ult = fs[fs.length - 1]; return (ult && ult > (p.fechaCrea || '')) ? ult : (p.fechaCrea || hoy); };
+    const lista = pend.map(p => { const dias = H.diasEntreFechas(baseDe(p), hoy); return { p, dias, recordar: dias >= 3 }; })
+      .sort((a, b) => (b.recordar - a.recordar) || (b.dias - a.dias) || (a.p.fechaComp || '9999').localeCompare(b.p.fechaComp || '9999'));
+    const porRecordar = lista.filter(x => x.recordar).length;
+    const refrescar = () => scheduleRefresh();
+    const pendCard = ({ p, dias, recordar }) => h('div', { class: 'pend-card' + (recordar ? ' recordar' : ''), onclick: () => formPendiente(p) },
+      h('div', { class: 'pc-main' },
+        recordar ? h('span', { class: 'pc-badge' }, p.ejecutor ? ('Recuérdale a ' + nombreCorto(p.ejecutor)) : 'Sin asignar — delégalo') : null,
+        h('div', { class: 'pc-title' }, h('span', {}, TIPO_PENDIENTE[p.tipo] || p.tipo), p.inv ? h('span', { class: 'pc-inv mono' }, p.inv) : null),
+        p.desc ? h('div', { class: 'pc-desc' }, p.desc) : null,
+        h('div', { class: 'pc-meta' }, (p.ejecutor ? 'Delegado a ' + nombreCorto(p.ejecutor) : 'Sin asignar') + ' · ' + (dias === 0 ? 'hoy' : 'hace ' + dias + ' día(s)') + (p.fechaComp ? ' · compromiso ' + fmtFecha(p.fechaComp) : ''))),
+      h('div', { class: 'pc-actions', onclick: e => e.stopPropagation() },
+        h('button', { class: 'btn sm', title: 'Registrar que lo solicitaste / recordaste', onclick: () => { H.agregarSeguimiento(p, 'Solicitado / recordado a ' + (p.ejecutor || '—')); toast('Registrado · recordado a ' + (p.ejecutor ? nombreCorto(p.ejecutor) : '—'), 'success'); refrescar(); } }, 'Solicitar'),
+        h('button', { class: 'btn sm', title: 'Delegar a un ejecutor', onclick: ev => { ev.stopPropagation(); delegarPend(p, ev.currentTarget); } }, 'Delegar'),
+        h('button', { class: 'btn sm ok', title: 'Marcar como resuelto', onclick: () => { H.cerrarPendiente(p); toast('Pendiente resuelto', 'success'); refrescar(); } }, 'Resuelto')));
+    root.appendChild(h('div', { class: 'home-sec' },
+      h('div', { class: 'home-sec-hd' },
+        h('h2', {}, 'Pendientes'),
+        h('span', { class: 'home-sec-sub' }, `${pend.length} activo(s)` + (porRecordar ? ` · ${porRecordar} por recordar` : '')),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
+        h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
+      lista.length
+        ? h('div', {}, h('div', { class: 'pend-list' }, ...lista.slice(0, 25).map(pendCard)),
+          lista.length > 25 ? h('div', { style: { marginTop: '11px', fontSize: '12.5px' } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${lista.length - 25} pendientes restantes →`)) : null)
+        : h('div', { class: 'home-empty' }, '✓ No tienes pendientes activos.')));
 
     return root;
   };
@@ -1762,10 +1843,13 @@
     const input = h('input', { type: 'text', placeholder: 'Buscar equipo o acción…  (Esc para cerrar)' });
     const listEl = h('div', { class: 'cmdk-list' });
     cmdkEl = h('div', { class: 'cmdk cmdk-modal' }, input, listEl); document.body.appendChild(cmdkEl); cmdkScrim.classList.add('on');
+    const ir = v => () => { closeCmdk(); go(v); };
     const actions = [
-      ['Ir: Cola de trabajo', () => go('inicio'), '⌂'], ['Ir: Equipos', () => go('equipos'), '▦'], ['Ir: Pendientes', () => go('pendientes'), '✓'],
-      ['Ir: Ciclos', () => go('ciclos'), '↻'], ['Ir: Eventos', () => go('eventos'), '≡'], ['Ir: MP del mes (detalle)', () => go('asignaciones'), '▤'], ['Ir: Configuración', () => go('configuracion'), '⚙'],
+      ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
+      ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
+      ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
       ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
     function render(q) {
@@ -2374,6 +2458,20 @@
   function buildRail() {
     mount(railNav, ...NAV.map(n => { const it = h('button', { class: 'nav-item', onclick: () => go(n.id) }, svg(ic[n.icon], 16), h('span', {}, n.label), h('span', { class: 'badge-count', style: { display: 'none' } })); navItems[n.id] = it; return it; }));
   }
+  // Menú "Más": el resto de vistas (no están al frente; se abren bajo demanda).
+  function masMenu(anchor) {
+    popover(anchor, [
+      ['Panel de control', () => go('panel')],
+      ['Equipos', () => go('equipos')],
+      ['Tablero', () => go('tablero')],
+      ['Pendientes', () => go('pendientes')],
+      ['Eventos / bitácora', () => go('eventos')],
+      ['MP del mes', () => go('asignaciones')],
+      ['Cumplimiento', () => go('cumplimiento')],
+      ['Exportar Excel', () => excelExport()],
+      ['Configuración', () => go('configuracion')]
+    ]);
+  }
   function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos') || (view === 'asignaciones' && id === 'cumplimiento')); }
   function refreshChrome() {
     const S = H.getState();
@@ -2393,7 +2491,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
+    const titles = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
     const t = titles[view] || 'Gestión Equipos Críticos HHHA';
     const tt = $('#tb-title'); if (tt) tt.textContent = t;
     document.title = 'Gestión Equipos Críticos HHHA' + (view === 'inicio' ? '' : ' · ' + t);
@@ -2428,23 +2526,20 @@
 
     const app = h('div', { class: 'app' },
       h('header', { class: 'topbar' },
-        h('div', { class: 'brand', title: 'Gestión Equipos Críticos HHHA' }, h('span', { class: 'mark' }, 'H'), h('span', { class: 'brand-name s-hide' }, 'HHHA')),
-        railNav,
+        h('div', { class: 'brand', title: 'Inicio', style: { cursor: 'pointer' }, onclick: () => go('inicio') }, h('span', { class: 'mark' }, 'H'), h('span', { class: 'brand-name s-hide' }, 'HHHA')),
         h('div', { class: 'tb-spacer' }),
-        h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted s-hide' }, 'Buscar…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
-        h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
-        h('button', { class: 'btn icon ghost', id: 'btn-density', title: 'Densidad', onclick: () => applyDensity(document.documentElement.getAttribute('data-density') === 'comodo' ? 'compacto' : 'comodo') }, svg(ic.density, 16)),
+        h('div', { class: 'search-pill big', onclick: () => openCmdk() }, svg(ic.search, 16), h('span', { class: 'muted' }, 'Buscar equipo o acción…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn icon ghost', title: 'Más vistas', onclick: ev => masMenu(ev.currentTarget) }, svg(ic.menu, 18)),
         h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
-        h('button', { class: 'btn icon ghost s-hide', title: 'Exportar libro Excel', onclick: excelExport }, svg(ic.dl, 16)),
         h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
         h('span', { class: 'u-avatar', title: 'Cristian · ' + APP_VERSION }, 'C'),
         h('span', { id: 'tb-title', style: { display: 'none' } })),
       h('main', { class: 'view', id: 'view' }));
     mount(document.getElementById('root'), app);
 
-    buildRail();
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
-    applyDensity(localStorage.getItem('sigem_density') || 'compacto');
+    applyDensity(localStorage.getItem('sigem_density') || 'comodo');
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);
