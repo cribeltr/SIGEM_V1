@@ -44,9 +44,11 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
 | `Esc` | Cerrar palette / drawer / popover |
 
 ## Vistas
-- **Cola de trabajo** — alertas + MP del mes (con "MP masiva") + panel **Equipos caídos**
-  (no operativos / en servicio técnico, con la última gestión y los días sin gestión,
-  ordenable por **días en estado** o **días sin gestión**) + pendientes accionables.
+- **Cola de trabajo** (ancho completo) — alertas + **Mi día** (pendientes **priorizados para
+  hoy**: vencidos, vence hoy, recordatorios, en proceso, por vencer, sin asignar, con botón
+  *Iniciar/Resolver* para avanzar en un clic) + MP del mes (con "MP masiva") + panel
+  **Equipos caídos** (no operativos / en servicio técnico, con la última gestión y los días
+  sin gestión, ordenable por **días en estado** o **días sin gestión**).
 - **Equipos** — tabla densa filtrable (estado/servicio/familia/búsqueda), selección
   múltiple → **registrar MP** en lote, columna "MP del mes".
 - **Tablero** — Kanban con tres modos conmutables (**arrastrar y soltar** con mouse):

@@ -2396,7 +2396,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b25';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b26';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2521,7 +2521,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const alert = (cls, n, label, onclick, sub) => h('div', { class: 'alert-card ' + cls, onclick },
       h('div', { class: 'a-n' }, n), h('div', {}, h('div', { class: 'a-l' }, label), sub ? h('div', { class: 'a-l faint', style: { marginTop: '1px' } }, sub) : null));
 
-    const root = h('div', { class: 'view-narrow' });
+    const root = h('div', { class: 'dash' });
     root.appendChild(h('div', { class: 'alert-strip' },
       alert('hi', noop.length, 'No operativos', () => go('equipos', { estado: 'no_operativo' }), 'fuera de servicio'),
       alert('med', st.length, 'En servicio técnico', () => go('equipos', { estado: 'en_servicio_tecnico' }), 'fuera del hospital'),
@@ -2536,6 +2536,51 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       alert('lo', borradores.length, 'Borradores', () => go('eventos', { oficial: 'No' }), 'sin oficializar'),
       alert('lo', conf.length, 'Conflictos', () => go('configuracion'), 'con el maestro')
     ));
+
+    // ===== MI DÍA · pendientes priorizados para resolver hoy =====
+    const hoy = H.hoyLocal();
+    const fechaLarga = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { return d; } };
+    const prio = p => {
+      const venc = p.fechaComp && p.fechaComp < hoy;
+      const dOver = venc ? H.diasEntreFechas(p.fechaComp, hoy) : 0;
+      const venceHoy = p.fechaComp === hoy;
+      const record = p.proxRecord && p.proxRecord <= hoy;
+      const dHasta = p.fechaComp && p.fechaComp > hoy ? H.diasEntreFechas(hoy, p.fechaComp) : null;
+      if (venc) return { score: 2000 + dOver, razon: `Vencido ${dOver}d`, cls: 'hi' };
+      if (venceHoy) return { score: 1900, razon: 'Vence hoy', cls: 'hi' };
+      if (record) return { score: 1800, razon: 'Recordatorio hoy', cls: 'med' };
+      if (p.estado === 'en_proceso') return { score: 1000, razon: 'En proceso', cls: 'med' };
+      if (dHasta != null && dHasta <= 7) return { score: 800 - dHasta, razon: `Vence en ${dHasta}d`, cls: 'med' };
+      return { score: p.ejecutor ? 200 : 150, razon: p.ejecutor ? 'Por iniciar' : 'Sin asignar', cls: '' };
+    };
+    const miDia = pendAct.map(p => ({ p, ...prio(p) })).sort((a, b) => b.score - a.score);
+    const urgentes = miDia.filter(x => x.cls === 'hi').length;
+    const miDiaCard = ({ p, razon, cls }) => {
+      const nxt = p.estado === 'no_iniciado' ? ['en_proceso', 'Iniciar'] : ['cerrado', 'Resolver'];
+      return h('div', { class: 'wl-item ' + (cls === 'hi' ? 'sev-hi' : cls === 'med' ? 'sev-med' : ''), onclick: () => formPendiente(p) },
+        h('div', { class: 'wl-acc' }),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { style: { display: 'flex', gap: '7px', alignItems: 'center', flexWrap: 'wrap' } },
+            h('span', { class: 'pill ' + (cls === 'hi' ? 'noop' : cls === 'med' ? 'st' : 'baja') }, razon),
+            h('span', { class: 'mono', style: { fontSize: '11.5px' } }, p.inv),
+            h('b', { style: { fontSize: '12px' } }, TIPO_PENDIENTE[p.tipo] || p.tipo)),
+          h('div', { class: 'm-txt', style: { fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' } }, (p.desc || '').slice(0, 90) || '—'),
+          h('div', { class: 'faint', style: { fontSize: '11px', marginTop: '2px' } }, [p.equipo, p.ejecutor || 'sin asignar'].filter(Boolean).join(' · '))),
+        h('button', { class: 'btn sm', title: 'Avanzar este pendiente', onclick: ev => { ev.stopPropagation(); H.cambiarEstadoPend(p, nxt[0]); toast('Pendiente: ' + nxt[1].toLowerCase() + 'do', 'success'); } }, nxt[1]));
+    };
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' },
+        h('h3', {}, 'Mi día'),
+        h('span', { class: 's-sub', style: { textTransform: 'capitalize' } }, fechaLarga(hoy)),
+        urgentes ? h('span', { class: 'pill noop' }, `${urgentes} urgente${urgentes > 1 ? 's' : ''}`) : h('span', { class: 'pill op' }, 'al día'),
+        h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
+        h('button', { class: 'btn sm', onclick: () => go('tablero', { board: 'pendientes' }) }, 'Tablero'),
+        h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
+      h('div', { class: 's-bd' }, miDia.length
+        ? h('div', { class: 'lane' }, ...miDia.slice(0, 12).map(miDiaCard))
+        : h('div', { class: 'empty' }, 'Sin pendientes activos — ¡día libre! 🎉')),
+      miDia.length > 12 ? h('div', { class: 's-bd', style: { paddingTop: 0 } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${miDia.length - 12} pendientes restantes →`)) : null));
 
     // MP del mes — barra de cumplimiento
     const mpSec = h('div', { class: 'section' },
@@ -2585,22 +2630,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         caidos.length ? h('button', { class: 'btn sm', onclick: () => go('equipos', { alerta30: 1 }) }, 'Ver +30 días') : null),
       h('div', { class: 's-bd flush' }, caidos.length ? caidosWrap : h('div', { class: 'empty' }, '✓ Sin equipos caídos'))));
 
-    // Pendientes accionables
-    const grp = (estado, title) => {
-      const list = pendAct.filter(p => p.estado === estado).sort((a, b) => (a.fechaComp || '9999').localeCompare(b.fechaComp || '9999'));
-      if (!list.length) return null;
-      return h('div', {},
-        h('div', { class: 'nav-group-lbl', style: { padding: '4px 0' } }, `${title} · ${list.length}`),
-        h('div', { class: 'lane' }, ...list.slice(0, 12).map(p => pendCard(p)))
-      );
-    };
-    root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes accionables'), h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
-        h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
-      h('div', { class: 's-bd' }, grp('no_iniciado', 'No iniciado') || h('div', {}), grp('en_proceso', 'En proceso'),
-        (!pendAct.length ? h('div', { class: 'empty' }, 'Sin pendientes activos 🎉') : null))
-    ));
     return root;
   };
 
@@ -2763,17 +2792,6 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     return h('div', {},
       h('div', { class: 'filterbar' }, h('span', { class: 'faint', style: { fontSize: '11px' } }, `${abiertos.length} ciclo(s) correctivo(s) abierto(s) · arrastra una tarjeta a una etapa para registrar ese evento`)),
       board);
-  }
-  function pendCard(p) {
-    const venc = p.fechaComp && p.fechaComp < H.hoyLocal();
-    return h('div', { class: 'wl-item ' + (venc ? 'sev-hi' : p.estado === 'en_proceso' ? 'sev-med' : ''), onclick: () => formPendiente(p) },
-      h('div', { class: 'wl-acc' }),
-      h('div', { class: 'wl-main' },
-        h('div', { class: 'wl-title' }, (p.desc || '(sin descripción)').slice(0, 90)),
-        h('div', { class: 'wl-meta' },
-          h('span', { class: 'mono' }, p.inv), h('span', {}, TIPO_PENDIENTE[p.tipo] || p.tipo),
-          p.ejecutor ? h('span', {}, p.ejecutor) : null,
-          p.fechaComp ? h('span', { class: venc ? '' : 'faint', style: venc ? { color: 'var(--noop)' } : null }, '⏱ ' + fmtFecha(p.fechaComp)) : null)));
   }
   function mpMesTable(list) {
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
