@@ -56,7 +56,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b24';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b25';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -266,6 +266,9 @@
 
   // ---- TABLERO (Kanban con 3 modos: por estado · pendientes · correctivos) -
   const TB_COLOR = { operativo: 'var(--op)', no_operativo: 'var(--noop)', en_servicio_tecnico: 'var(--st)', baja: 'var(--baja)' };
+  // Filtros del Tablero que sobreviven al re-render (p. ej. tras guardar desde un drop).
+  const tbEstadoF = { q: '', servicio: '', orden: 'dias', verOp: true };
+  const tbPendF = { q: '' };
   // Tarjeta arrastrable genérica. inner=nodos hijos · dragId=id para el drop · onClick · color de borde.
   function kbCard(inner, dragId, onClick, borderColor) {
     const c = h('div', { class: 'kb-card', draggable: 'true', style: borderColor ? { borderLeftColor: borderColor } : null }, ...inner.filter(Boolean));
@@ -300,7 +303,7 @@
   // Board 1 · Equipos por estado (arrastrar abre el evento que produce ese estado).
   function boardEstado() {
     const S = H.getState();
-    let q = '', servicio = '', orden = 'dias', verOp = true;
+    const F = tbEstadoF;   // estado persistente (búsqueda, servicio, orden, ver operativos)
     const COLS = [
       { estado: 'no_operativo', label: 'No operativo', tipo: 'Solicitud de trabajo' },
       { estado: 'en_servicio_tecnico', label: 'En servicio técnico', tipo: 'Envío a servicio técnico' },
@@ -310,7 +313,7 @@
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
     const board = h('div', { class: 'kb-board' });
     const gf = e => { const g = H.ultimaGestion(e.inv); return g ? g.fecha : ''; };
-    const match = e => (!servicio || e.servicio === servicio) && (!q || (e.inv || '').toLowerCase().includes(q) || (e.equipo || '').toLowerCase().includes(q) || (e.servicio || '').toLowerCase().includes(q));
+    const match = e => (!F.servicio || e.servicio === F.servicio) && (!F.q || (e.inv || '').toLowerCase().includes(F.q) || (e.equipo || '').toLowerCase().includes(F.q) || (e.servicio || '').toLowerCase().includes(F.q));
     const card = e => kbCard([
       h('div', { class: 'kb-inv' }, e.inv),
       h('div', { class: 'kb-eq' }, e.equipo || '—'),
@@ -318,26 +321,34 @@
         e.estado !== 'operativo' ? h('span', {}, h('b', {}, H.diasEnEstado(e)), ' d') : null,
         H.encargadoDe(e) ? h('span', {}, H.encargadoDe(e)) : null)
     ], e.inv, () => go('equipo', { inv: e.inv }), TB_COLOR[e.estado]);
+    // Drop: abre el evento que lleva a ese estado. A "Operativo" sin ciclo abierto → Visita
+    // técnica operativa (más fiel que una "Reparación" sin reparación de por medio).
+    const onDrop = col => inv => {
+      const eq = H.findEquipo(inv);
+      if (!eq || eq.estado === col.estado) return;
+      if (col.estado === 'operativo' && H.ciclosAbiertosDe(inv).length === 0) formNuevoEvento({ inv, tipo: 'Visita técnica', estado: 'operativo', tipoVisita: 'correctiva' });
+      else formNuevoEvento({ inv, tipo: col.tipo });
+    };
     function render() {
       board.innerHTML = '';
       COLS.forEach(col => {
-        if (col.estado === 'operativo' && !verOp) return;
+        if (col.estado === 'operativo' && !F.verOp) return;
         const list = S.equipos.filter(e => e.estado === col.estado && match(e));
-        list.sort(col.estado !== 'operativo' && orden === 'gestion' ? (a, b) => gf(a).localeCompare(gf(b))
+        list.sort(col.estado !== 'operativo' && F.orden === 'gestion' ? (a, b) => gf(a).localeCompare(gf(b))
           : col.estado === 'operativo' ? (a, b) => (a.inv || '').localeCompare(b.inv || '') : (a, b) => H.diasEnEstado(b) - H.diasEnEstado(a));
         const total = list.length;
         const cards = list.slice(0, CAP).map(card);
         const more = total > CAP ? h('div', { class: 'kb-more' }, `+${total - CAP} más · filtra para acotar`) : null;
-        board.appendChild(kbCol(col.label, TB_COLOR[col.estado], total, cards, inv => { const eq = H.findEquipo(inv); if (eq && eq.estado !== col.estado) formNuevoEvento({ inv, tipo: col.tipo }); }, more));
+        board.appendChild(kbCol(col.label, TB_COLOR[col.estado], total, cards, onDrop(col), more));
       });
     }
     render();
     return h('div', {},
       h('div', { class: 'filterbar' },
-        h('input', { type: 'search', placeholder: 'Buscar inv, equipo, servicio…', oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
-        selectEl([['', 'Todos los servicios'], ...servicios.map(s => [s, s])], '', { onchange: e => { servicio = e.target.value; render(); } }),
-        selectEl([['dias', 'Orden: días en estado'], ['gestion', 'Orden: más abandonado']], 'dias', { onchange: e => { orden = e.target.value; render(); } }),
-        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: true, onchange: e => { verOp = e.target.checked; render(); } }), 'Ver operativos'),
+        h('input', { type: 'search', value: F.q, placeholder: 'Buscar inv, equipo, servicio…', oninput: e => { F.q = e.target.value.toLowerCase(); render(); } }),
+        selectEl([['', 'Todos los servicios'], ...servicios.map(s => [s, s])], F.servicio, { onchange: e => { F.servicio = e.target.value; render(); } }),
+        selectEl([['dias', 'Orden: días en estado'], ['gestion', 'Orden: más abandonado']], F.orden, { onchange: e => { F.orden = e.target.value; render(); } }),
+        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: F.verOp ? true : false, onchange: e => { F.verOp = e.target.checked; render(); } }), 'Ver operativos'),
         h('div', { class: 'tb-spacer' }),
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra a otra columna para registrar el cambio')),
       board);
@@ -346,10 +357,10 @@
   // Board 2 · Pendientes por estado (arrastrar cambia el estado directo).
   function boardPendientes() {
     const S = H.getState();
-    let q = '';
+    const F = tbPendF;
     const COLS = [['no_iniciado', 'No iniciado', 'var(--noop)'], ['en_proceso', 'En proceso', 'var(--st)'], ['cerrado', 'Resuelto', 'var(--op)']];
     const board = h('div', { class: 'kb-board' });
-    const match = p => !q || (p.inv || '').toLowerCase().includes(q) || (p.equipo || '').toLowerCase().includes(q) || (p.desc || '').toLowerCase().includes(q) || (p.ejecutor || '').toLowerCase().includes(q);
+    const match = p => !F.q || (p.inv || '').toLowerCase().includes(F.q) || (p.equipo || '').toLowerCase().includes(F.q) || (p.desc || '').toLowerCase().includes(F.q) || (p.ejecutor || '').toLowerCase().includes(F.q);
     const card = p => {
       const venc = p.fechaComp && p.estado !== 'cerrado' && p.fechaComp < H.hoyLocal();
       return kbCard([
@@ -373,7 +384,7 @@
     render();
     return h('div', {},
       h('div', { class: 'filterbar' },
-        h('input', { type: 'search', placeholder: 'Buscar inv, responsable, descripción…', oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
+        h('input', { type: 'search', value: F.q, placeholder: 'Buscar inv, responsable, descripción…', oninput: e => { F.q = e.target.value.toLowerCase(); render(); } }),
         h('div', { class: 'tb-spacer' }),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo'),
         h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra para cambiar el estado del pendiente')),
@@ -1339,7 +1350,7 @@
       const obs = h('textarea', { placeholder: 'Observación / informe…' });
       function folioCtrl() { return ciclosAb.length ? selectEl([...ciclosAb.map(c => [c.folio || '', c.folio || '(sin folio)']), ['', '— sin vincular —']], ciclosAb[0].folio || '') : h('input', { type: 'text', placeholder: 'N° Informe / Folio' }); }
       if (tipo === 'Solicitud de trabajo') { const folio = h('input', { type: 'text', placeholder: 'N° Informe / Folio (opcional)' }); ctrls = { folio }; campos.append(h('div', { class: 'grid-2' }, field('Fecha', fecha), field('Ejecutor', ejecutor), field('N° Informe / Folio', folio), field('Oficial', oficial)), field('Descripción de la falla', obs), h('div', { class: 'notice info' }, 'Abre un ciclo correctivo y deja el equipo "no operativo".')); }
-      else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('N° Informe / Folio', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
+      else if (tipo === 'Visita técnica') { const empresa = h('input', { type: 'text' }), tecnico = h('input', { type: 'text' }), tipoVisita = selectEl([['diagnóstica', 'Diagnóstica'], ['correctiva', 'Correctiva']], opts.tipoVisita || 'diagnóstica'), folio = folioCtrl(), estado = selectEl([['no operativo', 'No operativo'], ['operativo', 'Operativo'], ['en servicio técnico', 'En servicio técnico']], opts.estado || 'no operativo'); ctrls = { empresa, tecnico, tipoVisita, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa', empresa), field('Técnico', tecnico)), h('div', { class: 'grid-3' }, field('Tipo visita', tipoVisita), field('N° Informe / Folio', folio), field('Estado', estado)), field('Informe', obs), field('Oficial', oficial)); }
       else if (tipo === 'Orden de Compra') { const nCotiz = h('input', { type: 'text' }), nOC = h('input', { type: 'text' }), empresa = h('input', { type: 'text' }), via = selectEl([['trato_directo', 'Trato directo'], ['compra_agil', 'Compra ágil']], 'trato_directo'), folioInformeTD = h('input', { type: 'text', placeholder: 'Solo si trato directo' }), folio = folioCtrl(); ctrls = { nCotiz, nOC, empresa, via, folioInformeTD, folio }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° Cotización', nCotiz), field('N° OC', nOC)), h('div', { class: 'grid-3' }, field('Empresa', empresa), field('Vía', via), field('Folio informe (TD)', folioInformeTD)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Oficial', oficial)), field('Observación', obs)); }
       else if (tipo === 'Envío a servicio técnico') { const empresa = h('input', { type: 'text' }), nEnvio = h('input', { type: 'text' }), folio = folioCtrl(); ctrls = { empresa, nEnvio, folio, estado: { value: 'en servicio técnico' } }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('Empresa ST', empresa), field('N° Envío', nEnvio)), h('div', { class: 'grid-2' }, field('Ejecutor', ejecutor), field('N° Informe / Folio', folio)), field('Oficial', oficial), field('Observación', obs), h('div', { class: 'notice' }, 'El equipo queda "en servicio técnico".')); }
       else if (tipo === 'Recepción') { const nEnvio = h('input', { type: 'text', placeholder: 'N° envío original' }), folioGuia = h('input', { type: 'text' }), folio = folioCtrl(), estado = selectEl([['operativo', 'Operativo (cierra ciclo)'], ['no operativo', 'No operativo'], ['en servicio técnico', 'En servicio técnico']], 'operativo'); ctrls = { nEnvio, folioGuia, folio, estado }; campos.append(h('div', { class: 'grid-3' }, field('Fecha', fecha), field('N° envío original', nEnvio), field('Folio guía despacho', folioGuia)), h('div', { class: 'grid-2' }, field('N° Informe / Folio', folio), field('Estado', estado)), field('Observación', obs), field('Oficial', oficial)); }

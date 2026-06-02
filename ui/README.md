@@ -52,8 +52,10 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
 - **Tablero** — Kanban con tres modos conmutables (**arrastrar y soltar** con mouse):
   - **Por estado** (No operativo · En servicio técnico · Operativo): soltar una tarjeta en
     otra columna abre el evento que produce ese estado (Solicitud → no operativo, Envío →
-    servicio técnico, Reparación → operativo). Filtro por búsqueda/servicio, orden por días
-    en estado o "más abandonado" (última gestión), y toggle para ocultar operativos.
+    servicio técnico, Reparación → operativo; si el equipo no tiene ciclo abierto, "Operativo"
+    abre una Visita técnica operativa en vez de Reparación). Filtro por búsqueda/servicio,
+    orden por días en estado o "más abandonado" (última gestión), y toggle para ocultar
+    operativos. Los filtros se conservan al re-renderizar (p. ej. tras guardar desde un drop).
   - **Pendientes** (No iniciado · En proceso · Resuelto): arrastrar **cambia el estado** del
     pendiente directo. Botón "Nuevo".
   - **Correctivos por etapa** (Solicitud → Visita → O. Compra → Envío → Recepción →
