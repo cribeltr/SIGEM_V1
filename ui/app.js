@@ -1562,15 +1562,19 @@
   // los conflictos se resuelven allí o en la pestaña "Conflictos" de cada equipo.)
   function conflictoRow(c, after) {
     const act = (accion, valor) => { H.resolverConflicto(c, accion, valor); toast('Conflicto resuelto', 'success'); after ? after() : scheduleRefresh(); };
+    // El N° de inventario abre la ficha del equipo (si ya existe en el programa).
+    const invEl = H.findEquipo(c.inv)
+      ? h('span', { class: 'mono link', title: 'Abrir la ficha del equipo', onclick: () => go('equipo', { inv: c.inv }) }, c.inv)
+      : h('span', { class: 'mono' }, c.inv);
     let body;
     if (c.tipo === 'mp_diferencia') {
       body = h('div', { style: { flex: 1 } },
-        h('div', {}, h('span', { class: 'mono' }, c.inv), ' · ', c.equipo || '', ' · ', h('b', {}, H.nombreCampoConflicto(c))),
+        h('div', {}, invEl, ' · ', c.equipo || '', ' · ', h('b', {}, H.nombreCampoConflicto(c))),
         h('div', { class: 'btn-row', style: { marginTop: '6px' } },
           h('span', { class: 'chip' }, 'Programa: ', h('b', {}, c.valorPrograma || '∅')),
           h('span', { class: 'chip' }, 'Maestro: ', h('b', {}, c.valorMaestro || '∅'))));
     } else {
-      body = h('div', { style: { flex: 1 } }, h('span', { class: 'mono' }, c.inv), ' · ', h('b', {}, H.nombreCampoConflicto(c)));
+      body = h('div', { style: { flex: 1 } }, invEl, ' · ', h('b', {}, H.nombreCampoConflicto(c)));
     }
     return h('div', { class: 'mini-row', style: { alignItems: 'flex-start' } }, body,
       h('div', { class: 'btn-row' },
