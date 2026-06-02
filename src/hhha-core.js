@@ -108,7 +108,7 @@
   const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', pauta_monitoreo: 'Pauta de Monitoreo Diario', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
   // Cargos de contacto del servicio (referencia organizacional, editable).
   const CARGOS_CONTACTO = ['Supervisor de Servicio Clínico', 'Encargado de Equipos', 'Jefe del Centro de Responsabilidad CCRR'];
-  function contactosPorDefecto() { return CARGOS_CONTACTO.map((cargo, i) => ({ id: i + 1, nombre: '', apellido: '', anexo: '', correo: '', cargo })); }
+  function contactosPorDefecto() { return CARGOS_CONTACTO.map((cargo, i) => ({ id: i + 1, servicio: '', nombre: '', apellido: '', anexo: '', correo: '', cargo })); }
   // Estados de pendiente orientados a la acción: No iniciado -> En proceso -> Resuelto.
   // 'cerrado' se conserva como estado final (= Resuelto) para no romper conteos (!== 'cerrado').
   const ESTADO_PEND_LABEL = { no_iniciado: 'No iniciado', en_proceso: 'En proceso', cerrado: 'Resuelto' };
@@ -167,6 +167,7 @@
     if (!d.importaciones) d.importaciones = [];
     if (!d.prefs) d.prefs = {};
     if (!d.contactos) d.contactos = contactosPorDefecto();
+    if (!d.actividad) d.actividad = [];
     d.counters = d.counters || {};
     if (d.counters.conflicto == null) d.counters.conflicto = (d.conflictos.length || 0) + 1;
     if (d.counters.importacion == null) d.counters.importacion = (d.importaciones.length || 0) + 1;
@@ -342,6 +343,7 @@
       asignacionesMP: {},
       correos: [],
       contactos: contactosPorDefecto(),
+      actividad: [],
       conflictos: [],
       importaciones: [],
       prefs: {}
@@ -1540,20 +1542,25 @@
 
   // ---- Contactos del servicio (referencia organizacional) ------------------
   function getContactos() { return state.contactos || (state.contactos = contactosPorDefecto()); }
+  // Contactos vinculados a un servicio: los de ese servicio + los generales (sin servicio).
+  function contactosDeServicio(servicio) {
+    const s = (servicio || '').trim().toLowerCase();
+    return getContactos().filter(c => { const cs = (c.servicio || '').trim().toLowerCase(); return cs === '' || cs === s; });
+  }
   function agregarContacto(c) {
     c = c || {};
     state.contactos = state.contactos || [];
     if (state.counters.contacto == null) state.counters.contacto = state.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
-    const nuevo = { id: state.counters.contacto++, nombre: c.nombre || '', apellido: c.apellido || '', anexo: c.anexo || '', correo: c.correo || '', cargo: c.cargo || '' };
+    const nuevo = { id: state.counters.contacto++, servicio: c.servicio || '', nombre: c.nombre || '', apellido: c.apellido || '', anexo: c.anexo || '', correo: c.correo || '', cargo: c.cargo || '' };
     state.contactos.push(nuevo);
-    audit('contacto', nuevo.id, 'creado', null, nuevo.cargo || '');
+    audit('contacto', nuevo.id, 'creado', null, [nuevo.servicio, nuevo.cargo].filter(Boolean).join(' · '));
     save();
     return { ok: true, contacto: nuevo };
   }
   function actualizarContacto(id, campos) {
     const c = (state.contactos || []).find(x => x.id === id);
     if (!c) return { ok: false, error: 'Contacto no encontrado' };
-    ['nombre', 'apellido', 'anexo', 'correo', 'cargo'].forEach(k => {
+    ['servicio', 'nombre', 'apellido', 'anexo', 'correo', 'cargo'].forEach(k => {
       if (campos && (k in campos)) { const v = campos[k] == null ? '' : String(campos[k]); if (c[k] !== v) { audit('contacto', c.id, k, c[k], v); c[k] = v; } }
     });
     save();
@@ -1566,6 +1573,26 @@
     audit('contacto', id, 'eliminado', c ? c.cargo : '', null);
     save();
     return { ok: true };
+  }
+
+  // ---- Registro de actividad (todos los clics) -----------------------------
+  // Bitácora de uso de la app. Se guarda localmente con debounce y viaja al
+  // Sheet junto con el próximo guardado real (no genera una sincronización por
+  // cada clic). Anillo acotado para no inflar el almacenamiento.
+  const ACTIVIDAD_MAX = 1500;
+  let _actTimer = null;
+  function getActividad() { return state.actividad || (state.actividad = []); }
+  function logActividad(accion, extra) {
+    if (!state || !accion) return;
+    state.actividad = state.actividad || [];
+    const ent = { ts: new Date().toISOString(), vista: (extra && extra.vista) || '', accion: String(accion).replace(/\s+/g, ' ').trim().slice(0, 140) };
+    if (extra && extra.inv) ent.inv = extra.inv;
+    if (extra && extra.usuario) ent.usuario = extra.usuario;
+    if (!ent.accion) return;
+    state.actividad.push(ent);
+    if (state.actividad.length > ACTIVIDAD_MAX) state.actividad.splice(0, state.actividad.length - ACTIVIDAD_MAX);
+    clearTimeout(_actTimer);
+    _actTimer = setTimeout(function () { try { persistirState(); } catch (e) {} }, 1200);
   }
 
   // Actualiza campos editables de un pendiente. (Núcleo del "Guardar" de abrirPendiente.)
@@ -1928,7 +1955,9 @@
     SUBESTADOS_ST, DOCS_CORRECTIVO, DOCS_PREVENTIVO, TIPO_PENDIENTE, ESTADO_PEND_LABEL,
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP, CARGOS_CONTACTO,
     // contactos del servicio
-    getContactos, agregarContacto, actualizarContacto, eliminarContacto,
+    getContactos, contactosDeServicio, agregarContacto, actualizarContacto, eliminarContacto,
+    // registro de actividad (clics)
+    logActividad, getActividad,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
     normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, asignarIdsEquipos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
