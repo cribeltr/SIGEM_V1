@@ -3106,6 +3106,15 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           h('div', { class: 'ht-sub' }, 'Asígnales un responsable para no perderles el seguimiento.')),
         h('button', { class: 'btn', onclick: e => { e.stopPropagation(); go('pendientes', { ejec: '__none' }); } }, 'Delegar')));
     }
+    const confsPend = (S.conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
+    if (confsPend.length) {
+      root.appendChild(h('div', { class: 'home-task warn', onclick: () => go('conflictos') },
+        h('span', { class: 'ht-ico' }, svg(ic.conciliacion, 20)),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { class: 'ht-title' }, `${confsPend.length} conflicto(s) con el maestro`),
+          h('div', { class: 'ht-sub' }, 'Diferencias entre lo registrado y el maestro importado. Revísalas.')),
+        h('button', { class: 'btn', onclick: e => { e.stopPropagation(); go('conflictos'); } }, 'Revisar')));
+    }
 
     // === BLOQUE 1 · Registrar ===
     const primarios = ['Mantención preventiva', 'Solicitud de trabajo', 'Envío a servicio técnico', 'Recepción'];
@@ -4590,7 +4599,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const actions = [
       ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
       ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
-      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
       [Grab.on ? 'Detener grabación y exportar' : 'Iniciar grabación', () => { closeCmdk(); Grab.toggle(); }, '⏺'],
@@ -4826,6 +4835,32 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('span', { class: 'faint', style: { fontSize: '11px', marginLeft: '8px' } }, 'Asigna un servicio para que el contacto aparezca en la ficha de sus equipos. "Todos los servicios" = contacto general.')));
   }
   VIEWS.contactos = function () { return h('div', { class: 'view-narrow' }, contactosEditor()); };
+
+  // Conflictos con el maestro (lista propia, accesible desde "Más"/búsqueda y
+  // a la que se llega automáticamente tras importar el maestro si quedan).
+  VIEWS.conflictos = function () {
+    const root = h('div', { class: 'view-narrow' });
+    const box = h('div', {});
+    const render = () => {
+      const cs = (H.getState().conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto');
+      if (!cs.length) { mount(box, h('div', { class: 'home-empty' }, '✓ Sin conflictos pendientes con el maestro.')); refreshChrome(); return; }
+      const after = () => { render(); refreshChrome(); };
+      mount(box,
+        h('div', { class: 'btn-row', style: { margin: '0 0 12px' } },
+          h('b', {}, cs.length + ' conflicto(s) pendiente(s)'), h('div', { class: 'tb-spacer' }),
+          h('button', { class: 'btn sm', onclick: () => { if (!window.confirm(`¿Aceptar el maestro en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'aceptar_maestro', null, { skipSave: true })); H.save(); toast('Resueltos (maestro)', 'success'); after(); } }, 'Aceptar todo (maestro)'),
+          h('button', { class: 'btn sm', onclick: () => { if (!window.confirm(`¿Mantener el programa en ${cs.length} conflicto(s)?`)) return; cs.forEach(c => H.resolverConflicto(c, 'mantener_programa', null, { skipSave: true })); H.save(); toast('Resueltos (programa)', 'success'); after(); } }, 'Mantener todo')),
+        h('div', { class: 'row-list' }, ...cs.slice(0, 500).map(c => conflictoRow(c, after))));
+    };
+    render();
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.conciliacion, 16), h('h3', {}, 'Conflictos con el maestro'), h('div', { class: 'tb-spacer' }),
+        h('button', { class: 'btn sm', onclick: () => importarMaestro(() => go('conflictos')) }, svg(ic.up, 14), 'Importar maestro')),
+      h('div', { class: 's-bd' },
+        h('div', { class: 'notice info', style: { marginBottom: '12px' } }, 'Lo que coincide con el maestro se oficializa; lo nuevo se importa; las diferencias quedan aquí. Presiona el N° de inventario para abrir la ficha del equipo.'),
+        box)));
+    return root;
+  };
 
   VIEWS.configuracion = function () {
     const root = h('div', { class: 'view-narrow' });
@@ -5120,7 +5155,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         const S = H.getState(); const impId = S.counters.importacion++; S.importaciones.push({ id: impId, fecha: new Date().toISOString(), archivo: f.name, resueltos: 0 });
         const parsed = await H.parsearMaestro(f); const res = H.compararMaestro(parsed, impId); H.save();
         toast(`Maestro conciliado · ${res.oficializados || 0} oficializadas (coinciden) · ${res.eventosSinteticos} importadas · ${res.autoCompletados} auto-completadas · ${res.conflictos} conflictos`, 'success');
-        after && after();
+        // Si quedan conflictos pendientes, llevar directo a su lista para resolverlos.
+        const nConf = (H.getState().conflictos || []).filter(c => c.estado === 'pendiente' || c.estado === 'pospuesto').length;
+        if (nConf) go('conflictos'); else if (after) after();
       } catch (err) { toast('Error: ' + err.message, 'error'); }
     } });
     document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 1000);
@@ -5142,6 +5179,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       ['Eventos / bitácora', () => go('eventos')],
       ['MP del mes', () => go('asignaciones')],
       ['Cumplimiento', () => go('cumplimiento')],
+      ['Conflictos con el maestro', () => go('conflictos')],
       ['Contactos', () => go('contactos')],
       ['Exportar Excel', () => excelExport()],
       ['Configuración', () => go('configuracion')]
@@ -5166,7 +5204,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', contactos: 'Contactos del servicio', configuracion: 'Configuración' };
+    const titles = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', conflictos: 'Conflictos con el maestro', contactos: 'Contactos del servicio', configuracion: 'Configuración' };
     const t = titles[view] || 'Gestión Equipos Críticos HHHA';
     const tt = $('#tb-title'); if (tt) tt.textContent = t;
     document.title = 'Gestión Equipos Críticos HHHA' + (view === 'inicio' ? '' : ' · ' + t);
