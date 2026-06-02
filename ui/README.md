@@ -212,9 +212,10 @@ faltaba** en la UI, sin cambiar el diseño:
 - **Exportar Excel** → "Cuaderno de operaciones" autónomo, pensado para usarse **sin
   la aplicación**:
   - **Inicio** — leyenda de códigos (MP/causales/estados) y mapa de relaciones entre hojas.
-  - **Inventario** — un registro por equipo: **ID_EQUIPO** (= N° Inventario, clave de unión),
-    carpeta, equipo, servicio/unidad/ubicación, procedencia, marca/modelo/serie, año, VUR,
-    clasificación y ENU/Baja.
+  - **Inventario** — un registro por equipo: **ID_EQUIPO** (correlativo estable, clave
+    surrogada), N° Carpeta, N° Inventario, equipo, servicio/unidad/ubicación, procedencia,
+    marca/modelo/serie, año, VUR, clasificación y ENU/Baja. La unión con las demás hojas se
+    hace por **N° Inv.** (= N° Inventario).
   - **Pendientes** — **ID_PENDIENTE**, N° Inv., equipo, tipo, descripción, responsable,
     estado y compromiso.
   - **Tareas** — **ID_Tareas**, N° Inv., equipo, tipo, descripción, responsable, estado y
@@ -226,10 +227,9 @@ faltaba** en la UI, sin cambiar el diseño:
   - **Equipos en servicio técnico** / **Equipos no operativos** — equipos en ese estado, con
     días en estado, **última gestión** y **días sin gestión**, encargado, pendientes abiertos
     y el N° de informe/folio y apertura del ciclo correctivo abierto.
-  - **Plan anual MP · año** — P/R (programado/realizado) por mes de cada equipo.
-  - **Hoja de ruta · mes** — MP programadas del mes para **imprimir y registrar a
-    mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Obs*.
-  - **MP por mes** — resumen anual de cumplimiento (espejo de *Cumplimiento › Por mes*).
+
+  (La planificación MP — plan anual, hoja de ruta, cumplimiento por mes — se trabaja en la app;
+  el libro mantiene sólo el set de datos relacional.)
 
 ## Notas
 - Mismo `STORAGE_KEY` que el núcleo (`hhha_v1_data`): comparte datos con cualquier

@@ -1526,6 +1526,7 @@
     reconstruirCiclos();
     normalizarTiposEvento();
     normalizarEstadoEventos();
+    asignarIdsEquipos();
     state.__userActions = state.__userActions || 0;
     save();
     UI.onChange();
@@ -1713,6 +1714,17 @@
     return n;
   }
 
+  // Asigna un ID correlativo PERSISTENTE a cada equipo (clave surrogada estable para el
+  // export relacional). Una vez asignado no cambia; los equipos nuevos toman el siguiente.
+  function asignarIdsEquipos() {
+    if (state.counters.equipo == null) {
+      const maxId = (state.equipos || []).reduce((m, e) => Math.max(m, typeof e.id === 'number' ? e.id : 0), 0);
+      state.counters.equipo = maxId + 1;
+    }
+    let n = 0;
+    (state.equipos || []).forEach(e => { if (typeof e.id !== 'number') { e.id = state.counters.equipo++; n++; } });
+    return n;
+  }
   function bootstrapDatos() {
     state = load();
     if (state) {
@@ -1720,6 +1732,7 @@
       cambios += reconstruirCiclos();          // reconstruye ciclos si el backup no los trae
       cambios += normalizarTiposEvento();      // normaliza etiquetas antiguas de tipo
       cambios += normalizarEstadoEventos();    // corrige estado determinista (MP causal, Solicitud, Envío)
+      cambios += asignarIdsEquipos();          // ID_EQUIPO correlativo persistente
       if (cambios > 0) {
         save({ internal: true });
         UI.notify(`Migración: ${cambios} ajuste${cambios > 1 ? 's' : ''} de consistencia aplicado${cambios > 1 ? 's' : ''}.`, 'success');
@@ -1728,6 +1741,7 @@
     if (!state) {
       state = init();
       reconstruirCiclos();
+      asignarIdsEquipos();
       state.equipos.forEach(recalcEstadoEquipo);
       save({ internal: true });
     }
@@ -1748,7 +1762,7 @@
     MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
-    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
+    normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, asignarIdsEquipos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
     // utilidades
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)

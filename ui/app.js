@@ -56,7 +56,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b27';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b28';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1735,8 +1735,8 @@
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['SIGEM · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
         ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Equipos en servicio técnico · Equipos no operativos.'],
-        ['Hojas de planificación MP: Plan anual MP · Hoja de ruta · MP por mes.'],
-        ['Relaciones: en Pendientes/Tareas/Bitácora la columna "N° Inv." une con "ID_EQUIPO" de Inventario; "Tareas-Pendientes" une ID_PENDIENTE con ID_TAREAS.'],
+        ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
+        ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
         ['LEYENDA · RESULTADO MP'], ['Si', 'MP realizada'],
         ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc]), ['FS', 'Fuera de servicio'], ['NU', 'No ubicado'], ['Baja', 'Dado de baja'], ['No', 'No realizada'],
@@ -1748,7 +1748,7 @@
     sheets.push({
       name: 'Inventario', hidden: false, rows: [
         ['ID_EQUIPO', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Clasificación', 'ENU / Baja'],
-        ...S.equipos.map(e => [e.inv, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.estado === 'baja' ? 'Baja' : 'En uso'])
+        ...S.equipos.map(e => [e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.estado === 'baja' ? 'Baja' : 'En uso'])
       ]
     });
 
@@ -1794,40 +1794,6 @@
     });
     sheets.push({ name: 'Equipos en servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
     sheets.push({ name: 'Equipos no operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
-
-    // Plan anual MP (P/R por mes) del año vigente
-    const planHd = ['N° Inv.', 'Equipo', 'Servicio', 'Freq', 'Encargado']; MESES.forEach(m => planHd.push(m + ' P', m + ' R'));
-    sheets.push({
-      name: 'Plan anual MP ' + YEAR, hidden: false, rows: [planHd,
-        ...S.equipos.map(e => { const row = [e.inv, e.equipo || '', e.servicio || '', e.freq || '', H.encargadoDe(e) || '']; MESES.forEach(m => { const reg = (e.registro || {})[m] || {}; row.push(reg.P || (e.prog || {})[m] || '', reg.R || ''); }); return row; })]
-    });
-    // Hoja de ruta MP del mes actual
-    const keyMes = `${YEAR}-${String(MONTH + 1).padStart(2, '0')}`; const asig = (S.asignacionesMP || {})[keyMes] || {};
-    sheets.push({
-      name: 'Hoja de ruta ' + MES_ESP(MONTH), hidden: false, rows: [
-        ['N° Inv.', 'Equipo', 'Servicio', 'Ubicación', 'Freq', 'Responsable', 'Prog.', 'Realizada (✎)', 'Fecha (✎)', 'Estado (✎)', 'Firma (✎)', 'Obs (✎)'],
-        ...S.equipos.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH])).map(e => [e.inv, e.equipo || '', e.servicio || '', e.ubic || '', e.freq || '', asig[e.inv] || '', (e.prog || {})[MESES[MONTH]] || '', '', '', '', '', ''])
-      ]
-    });
-    // MP por mes (resumen anual de cumplimiento) — espejo de la vista Cumplimiento › Por mes
-    const vivosMP = S.equipos.filter(e => e.estado !== 'baja');
-    const mpRows = MESES.map((mm, i) => {
-      const asigM = (S.asignacionesMP || {})[`${YEAR}-${String(i + 1).padStart(2, '0')}`] || {};
-      let prog = 0, asg = 0, ofi = 0, bor = 0, rep = 0, fs = 0, nu = 0, baja = 0, sin = 0;
-      vivosMP.forEach(e => {
-        const c = H.claseMPMes(e, YEAR, i); if (!c) return; prog++; if (asigM[e.inv]) asg++;
-        if (c === 'oficial') ofi++; else if (c === 'borrador') bor++; else if (c === 'reprog') rep++; else if (c === 'noreg') sin++;
-        else { const r = H.resultadoMPMes(e, YEAR, i); if (r === 'FS') fs++; else if (r === 'NU') nu++; else if (r === 'Baja') baja++; else sin++; }
-      });
-      const realiz = ofi + bor;
-      return [MES_ESP(i), prog, ofi, bor, rep, prog - ofi - bor - rep, realiz, fs, nu, baja, sin, asg, prog - asg, prog ? Math.round(realiz / prog * 100) + '%' : ''];
-    });
-    sheets.push({
-      name: 'MP por mes', hidden: false, rows: [
-        ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'],
-        ...mpRows
-      ]
-    });
     return sheets;
   }
 
