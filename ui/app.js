@@ -32,6 +32,7 @@
     check: 'M20 6L9 17l-5-5',
     inicio: 'M3 11h18M5 11V5a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6m-6 0v3a2 2 0 0 1-4 0v-3',
     equipos: 'M4 5h16v12H4zM2 21h20M9 9h6',
+    tablero: 'M4 5h4v14h-4z M10 5h4v9h-4z M16 5h4v12h-4z',
     pendientes: 'M9 11l3 3 8-8M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0',
     ciclos: 'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5',
     eventos: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
@@ -54,7 +55,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b20';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b21';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -126,6 +127,7 @@
   const NAV = [
     { id: 'inicio', label: 'Cola de trabajo', icon: 'inicio' },
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
+    { id: 'tablero', label: 'Tablero', icon: 'tablero' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
@@ -259,6 +261,68 @@
         (!pendAct.length ? h('div', { class: 'empty' }, 'Sin pendientes activos 🎉') : null))
     ));
     return root;
+  };
+
+  // ---- TABLERO (Kanban "Equipos por estado", arrastrar y soltar) ----------
+  VIEWS.tablero = function () {
+    const S = H.getState();
+    let q = (params.q || '').toLowerCase();
+    let servicio = params.servicio || '';
+    const CAP = 80;
+    // Cada columna = un estado + el tipo de evento que lo produce (al soltar se abre ese
+    // formulario; el estado NO se fija a mano, se deriva del evento → queda registrado).
+    const COLS = [
+      { estado: 'no_operativo', label: 'No operativo', color: 'var(--noop)', tipo: 'Solicitud de trabajo' },
+      { estado: 'en_servicio_tecnico', label: 'En servicio técnico', color: 'var(--st)', tipo: 'Envío a servicio técnico' },
+      { estado: 'operativo', label: 'Operativo', color: 'var(--op)', tipo: 'Reparación' }
+    ];
+    const colorDe = est => (COLS.find(c => c.estado === est) || { color: 'var(--baja)' }).color;
+    const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
+    const board = h('div', { class: 'kb-board' });
+    const match = e => (!servicio || e.servicio === servicio) &&
+      (!q || (e.inv || '').toLowerCase().includes(q) || (e.equipo || '').toLowerCase().includes(q) || (e.servicio || '').toLowerCase().includes(q));
+
+    function card(e) {
+      const c = h('div', { class: 'kb-card', draggable: 'true', style: { borderLeftColor: colorDe(e.estado) } },
+        h('div', { class: 'kb-inv' }, e.inv),
+        h('div', { class: 'kb-eq' }, e.equipo || '—'),
+        h('div', { class: 'kb-meta' },
+          h('span', {}, e.servicio || '—'),
+          e.estado !== 'operativo' ? h('span', {}, h('b', {}, H.diasEnEstado(e)), ' d') : null,
+          H.encargadoDe(e) ? h('span', {}, H.encargadoDe(e)) : null));
+      c.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', e.inv); ev.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
+      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+      c.addEventListener('click', () => go('equipo', { inv: e.inv }));
+      return c;
+    }
+    function buildCol(col) {
+      const list = S.equipos.filter(e => e.estado === col.estado && match(e));
+      list.sort(col.estado === 'operativo' ? (a, b) => (a.inv || '').localeCompare(b.inv || '') : (a, b) => H.diasEnEstado(b) - H.diasEnEstado(a));
+      const total = list.length, shown = list.slice(0, CAP);
+      const colEl = h('div', { class: 'kb-col' },
+        h('div', { class: 'kb-hd' }, h('span', { class: 'dot', style: { background: col.color } }), col.label, h('span', { class: 'cnt' }, total)),
+        h('div', { class: 'kb-list' },
+          ...(shown.length ? shown.map(card) : [h('div', { class: 'kb-empty' }, 'Sin equipos')]),
+          total > CAP ? h('div', { class: 'kb-more' }, `+${total - CAP} más · usa el buscador o filtra por servicio`) : null));
+      colEl.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; colEl.classList.add('drop-ok'); });
+      colEl.addEventListener('dragleave', ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove('drop-ok'); });
+      colEl.addEventListener('drop', ev => {
+        ev.preventDefault(); colEl.classList.remove('drop-ok');
+        const inv = ev.dataTransfer.getData('text/plain'), eq = H.findEquipo(inv);
+        if (!eq || eq.estado === col.estado) return;   // misma columna o equipo inválido
+        formNuevoEvento({ inv: eq.inv, tipo: col.tipo });
+      });
+      return colEl;
+    }
+    function render() { board.innerHTML = ''; COLS.forEach(col => board.appendChild(buildCol(col))); }
+    render();
+    return h('div', {},
+      h('div', { class: 'filterbar' },
+        h('input', { type: 'search', placeholder: 'Buscar inv, equipo, servicio…', value: q, oninput: e => { q = e.target.value.toLowerCase(); render(); } }),
+        selectEl([['', 'Todos los servicios'], ...servicios.map(s => [s, s])], servicio, { onchange: e => { servicio = e.target.value; render(); } }),
+        h('div', { class: 'tb-spacer' }),
+        h('span', { class: 'faint', style: { fontSize: '11px' } }, 'Arrastra una tarjeta a otra columna para registrar el cambio de estado')),
+      board);
   };
   function pendCard(p) {
     const venc = p.fechaComp && p.fechaComp < H.hoyLocal();
@@ -1171,7 +1235,7 @@
     });
   }
   function formNuevoEvento(opts) {
-    let invSel = opts.inv || ''; let tipo = null;
+    let invSel = opts.inv || ''; let tipo = opts.tipo || null;
     const body = h('div', {});
     function build() {
       const eq = invSel ? H.findEquipo(invSel) : null;
@@ -1949,7 +2013,7 @@
     const v = (VIEWS[view] || VIEWS.inicio);
     const node = v();
     mount($('#view'), node);
-    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
+    const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
     $('#tb-title').textContent = titles[view] || 'SIGEM';
   }
 
