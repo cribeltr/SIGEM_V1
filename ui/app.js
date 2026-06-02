@@ -54,7 +54,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-01 · b15';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-01 · b16';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1511,7 +1511,7 @@
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['SIGEM · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Las hojas de trabajo (Inventario, Plan anual MP, Hoja de ruta, Pendientes, Bitácora, Correctivos, MP por mes) reflejan los datos al momento de sincronizar.'],
+        ['Las hojas de trabajo (Inventario, En servicio técnico, No operativos, Plan anual MP, Hoja de ruta, Pendientes, Bitácora, Correctivos, MP por mes) reflejan los datos al momento de sincronizar.'],
         ['Los datos del sistema están en hojas ocultas (que empiezan con "_"). No las borres ni las edites.'], [],
         ['LEYENDA · RESULTADO MP'], ['Si', 'MP realizada'],
         ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc]), ['FS', 'Fuera de servicio'], ['NU', 'No ubicado'], ['Baja', 'Dado de baja'], ['No', 'No realizada'],
@@ -1525,6 +1525,14 @@
         ...S.equipos.map(e => [e.inv, e.carpeta || '', e.serie || '', e.fam || '', e.equipo || '', e.marca || '', e.modelo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.ano || '', e.freq || '', estLbl(e.estado), H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length])
       ]
     });
+    // Equipos por estado de atención (servicio técnico / no operativos): vista rápida para seguimiento.
+    const colsEstado = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Días en estado', 'Desde', 'Encargado', 'Pend. abiertos', 'N° Informe / Folio', 'Apertura ciclo'];
+    const filasEstado = est => S.equipos.filter(e => e.estado === est).map(e => {
+      const ciclo = H.ciclosAbiertosDe(e.inv)[0];
+      return [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', H.diasEnEstado(e), fF(e.estadoDesde), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, ciclo ? (ciclo.folio || '') : '', ciclo ? fF(ciclo.fechaApertura) : ''];
+    });
+    sheets.push({ name: 'En servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
+    sheets.push({ name: 'No operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
     // Plan anual MP (P/R por mes) del año vigente
     const planHd = ['N° Inv.', 'Equipo', 'Servicio', 'Freq', 'Encargado']; MESES.forEach(m => planHd.push(m + ' P', m + ' R'));
     sheets.push({

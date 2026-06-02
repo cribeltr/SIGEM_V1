@@ -197,6 +197,9 @@ faltaba** en la UI, sin cambiar el diseño:
     descripción de cada causal C1–C8, y estados del equipo).
   - **Inventario** — catálogo completo con estado, días en estado, encargado y
     pendientes abiertos.
+  - **En servicio técnico** / **No operativos** — equipos en ese estado, con días en
+    estado, encargado, pendientes abiertos y el N° de informe/folio y apertura del
+    ciclo correctivo abierto.
   - **Plan anual MP · año** — P/R (programado/realizado) por mes de cada equipo.
   - **Hoja de ruta · mes** — MP programadas del mes para **imprimir y registrar a
     mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Obs*.
