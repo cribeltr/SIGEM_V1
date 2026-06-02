@@ -1764,6 +1764,16 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
 
   // Registra UNA Mantención Preventiva. (Núcleo de la antigua "mpRapida".)
   // d = {inv, fecha, resultado, ejecutor, obs, estadoSi, oficial='No', origen, forzarSinProg}
+  // Vincula el responsable del mes (fila "Responsable" de la matriz) con el
+  // ejecutor de una MP registrada interactivamente, para no ingresarlo a mano.
+  function setResponsableMesDesdeMP(inv, fecha, ejecutor) {
+    if (!inv || !fecha || !ejecutor) return;
+    const km = String(fecha).slice(0, 7);   // 'YYYY-MM'
+    if (!/^\d{4}-\d{2}$/.test(km)) return;
+    state.asignacionesMP = state.asignacionesMP || {};
+    state.asignacionesMP[km] = state.asignacionesMP[km] || {};
+    state.asignacionesMP[km][inv] = ejecutor;
+  }
   function registrarMP(d) {
     const eq = findEquipo(d.inv);
     if (!eq) return { ok: false, error: 'Equipo no encontrado' };
@@ -1791,6 +1801,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     if (d.origen) ev.origen = d.origen;
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    setResponsableMesDesdeMP(eq.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, 'MP rápida');
     setPref('ultimoEjecutor', d.ejecutor);
     setPref('ultimoResultadoMP', d.resultado);
@@ -1845,6 +1856,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     // 3) Re-aplicar efectos (R del mes, pendientes por causal, marca R del mes siguiente) y recalcular estado.
     aplicarEfectosEvento(ev);
     recalcEstadoEquipo(eq);
+    setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
     if (d.ejecutor) setPref('ultimoEjecutor', d.ejecutor);
     setPref('ultimoResultadoMP', d.resultado);
     save();
@@ -1920,6 +1932,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
       };
       state.eventos.push(ev);
       aplicarEfectosEvento(ev);
+      setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
       audit('evento', ev.id, 'creado', null, 'MP masiva');
       creados++;
     });
@@ -1988,6 +2001,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     else if (d.tipo === 'Solicitud de trabajo') ev.estado = 'no operativo';
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    if (ev.tipo === 'Mantención preventiva') setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, d.tipo);
     save();
     return { ok: true, evento: ev };
@@ -3458,7 +3472,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function eventoTimeline(eq) {
     const all = H.eventosDeTodos(eq.inv).slice().reverse();   // más reciente primero
     const dup = H.idsMPDuplicadas();
-    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.estado !== 'cerrado' && p.eventoOrigen === e.id);
     let verAuto = false;
     const body = h('div', { class: 's-bd' });
     const sub = h('span', { class: 's-sub' });
@@ -3842,7 +3856,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
     const stop = ev => ev.stopPropagation();
     const cap = capCell;
-    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.estado !== 'cerrado' && p.eventoOrigen === e.id);
     const pendCell = e => {
       const ps = pendsDe(e);
       return h('td', { class: 'nowrap', onclick: stop },

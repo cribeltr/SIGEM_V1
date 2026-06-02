@@ -1147,6 +1147,16 @@
 
   // Registra UNA Mantención Preventiva. (Núcleo de la antigua "mpRapida".)
   // d = {inv, fecha, resultado, ejecutor, obs, estadoSi, oficial='No', origen, forzarSinProg}
+  // Vincula el responsable del mes (fila "Responsable" de la matriz) con el
+  // ejecutor de una MP registrada interactivamente, para no ingresarlo a mano.
+  function setResponsableMesDesdeMP(inv, fecha, ejecutor) {
+    if (!inv || !fecha || !ejecutor) return;
+    const km = String(fecha).slice(0, 7);   // 'YYYY-MM'
+    if (!/^\d{4}-\d{2}$/.test(km)) return;
+    state.asignacionesMP = state.asignacionesMP || {};
+    state.asignacionesMP[km] = state.asignacionesMP[km] || {};
+    state.asignacionesMP[km][inv] = ejecutor;
+  }
   function registrarMP(d) {
     const eq = findEquipo(d.inv);
     if (!eq) return { ok: false, error: 'Equipo no encontrado' };
@@ -1174,6 +1184,7 @@
     if (d.origen) ev.origen = d.origen;
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    setResponsableMesDesdeMP(eq.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, 'MP rápida');
     setPref('ultimoEjecutor', d.ejecutor);
     setPref('ultimoResultadoMP', d.resultado);
@@ -1228,6 +1239,7 @@
     // 3) Re-aplicar efectos (R del mes, pendientes por causal, marca R del mes siguiente) y recalcular estado.
     aplicarEfectosEvento(ev);
     recalcEstadoEquipo(eq);
+    setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
     if (d.ejecutor) setPref('ultimoEjecutor', d.ejecutor);
     setPref('ultimoResultadoMP', d.resultado);
     save();
@@ -1303,6 +1315,7 @@
       };
       state.eventos.push(ev);
       aplicarEfectosEvento(ev);
+      setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
       audit('evento', ev.id, 'creado', null, 'MP masiva');
       creados++;
     });
@@ -1371,6 +1384,7 @@
     else if (d.tipo === 'Solicitud de trabajo') ev.estado = 'no operativo';
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    if (ev.tipo === 'Mantención preventiva') setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, d.tipo);
     save();
     return { ok: true, evento: ev };

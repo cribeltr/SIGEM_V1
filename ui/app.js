@@ -817,7 +817,7 @@
   function eventoTimeline(eq) {
     const all = H.eventosDeTodos(eq.inv).slice().reverse();   // más reciente primero
     const dup = H.idsMPDuplicadas();
-    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.estado !== 'cerrado' && p.eventoOrigen === e.id);
     let verAuto = false;
     const body = h('div', { class: 's-bd' });
     const sub = h('span', { class: 's-sub' });
@@ -1201,7 +1201,7 @@
     const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
     const stop = ev => ev.stopPropagation();
     const cap = capCell;
-    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.estado !== 'cerrado' && p.eventoOrigen === e.id);
     const pendCell = e => {
       const ps = pendsDe(e);
       return h('td', { class: 'nowrap', onclick: stop },
