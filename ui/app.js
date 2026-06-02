@@ -2001,7 +2001,7 @@
     rows.push([], ['CLICS POR DÍA'], ['Día', 'Clics']);
     Object.keys(porDia).sort().forEach(k => rows.push([k, porDia[k]]));
     rows.push([], ['CLICS POR HORA DEL DÍA'], ['Hora', 'Clics']);
-    for (let hh = 0; hh < 24; hh++) if (porHora[hh]) rows.push([String(hh).padStart(2, '0') + ':00', porHora[hh]]);
+    for (let hh = 0; hh < 24; hh++) if (porHora[hh]) rows.push([String(hh).padStart(2, '0') + ' h', porHora[hh]]);
     rows.push([], ['DURACIÓN DE CADA SESIÓN'], ['Sesión', 'Clics', 'Duración']);
     sesArr.sort((a, b) => a.id.localeCompare(b.id)).slice(-50).forEach(s => rows.push([s.id, s.n, fmtT(s.dur)]));
     return rows;
@@ -2570,7 +2570,11 @@
       try {
         const el = e.target && e.target.closest && e.target.closest('button, a, .link, .nav-item, .alert-card, .type-card, .tabs button, .seg button, .kpi, .kb-card, [role="button"]');
         if (!el) return;
-        let label = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || el.textContent || '';
+        let label = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || '';
+        if (!label) { // texto del control, sin insignias/contadores/descripciones secundarias
+          let src = el; try { src = el.cloneNode(true); src.querySelectorAll('.badge-count, .pc-inv, .kbd, small, sup').forEach(n => n.remove()); } catch (_) {}
+          label = src.textContent || '';
+        }
         label = String(label).replace(/\s+/g, ' ').trim();
         if (!label) label = (typeof el.className === 'string' && el.className) ? el.className.split(' ')[0] : 'control';
         if (H && H.logActividad) { H.logActividad(label, { vista: view, inv: params && params.inv, cat: categoriaDe(el), sesion: SESION }); syncActividad(); }
