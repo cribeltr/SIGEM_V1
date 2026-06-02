@@ -2441,7 +2441,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-02 · v1.1';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-02 · v1.2';   // sello de build visible (sidebar y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3425,23 +3425,41 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function eventosTable(list, compact, colf) {
     const dup = H.idsMPDuplicadas();
     const TH = (key, lbl, getter, cls) => colf ? colf.thF(key, lbl, getter, { cls }) : h('th', { class: cls || '' }, lbl);
+    const stop = ev => ev.stopPropagation();
+    // Limita el ancho real de una celda (el max-width en <td> no es fiable en tablas auto;
+    // un <div> interno sí lo respeta) → evita la barra de scroll horizontal.
+    const cap = (w, ...kids) => h('div', { style: { maxWidth: w + 'px', whiteSpace: 'normal', overflowWrap: 'anywhere' } }, ...kids.filter(Boolean));
+    const pendsDe = e => H.pendientesDe(e.inv).filter(p => !p.anulado && p.eventoOrigen === e.id);
+    const pendCell = e => {
+      const ps = pendsDe(e);
+      return h('td', { class: 'nowrap', onclick: stop },
+        ...ps.slice(0, 2).map(p => h('span', { class: 'tag', style: { cursor: 'pointer', marginRight: '3px', borderColor: p.estado === 'cerrado' ? 'var(--border)' : 'color-mix(in srgb, var(--st) 45%, var(--border))' }, title: (TIPO_PENDIENTE[p.tipo] || p.tipo) + (p.desc ? ' · ' + p.desc : ''), onclick: () => formPendiente(p) }, (p.estado === 'cerrado' ? '✓ ' : '') + (TIPO_PENDIENTE[p.tipo] || p.tipo).slice(0, 14))),
+        ps.length > 2 ? h('span', { class: 'faint', style: { fontSize: '10.5px', marginRight: '3px' } }, '+' + (ps.length - 2)) : null,
+        h('button', { class: 'btn icon ghost sm', title: 'Crear pendiente de este evento', onclick: () => formNuevoPendiente({ inv: e.inv, eventoOrigen: e.id, desc: 'Derivado de: ' + H.etiquetaTipoEvento(e) + (e.folio ? ' (folio ' + e.folio + ')' : '') }) }, svg(ic.plus, 13)));
+    };
     return h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
       h('thead', {}, h('tr', {},
         TH('fecha', 'Fecha', e => fmtFecha(e.fecha)), !compact ? TH('inv', 'N° Inv.', e => e.inv) : null,
         TH('tipo', 'Tipo', e => H.etiquetaTipoEvento(e)), TH('res', 'Resultado', e => e.resultado || '—'),
         TH('estadoE', 'Estado', e => e.estado || '—'), TH('ejec', 'Ejecutor', e => e.ejecutor || '—'),
-        TH('folio', 'N° Informe / Folio', e => e.folio || '—'), TH('obs', 'Observación', e => e.obs || '—'),
-        TH('oficial', 'Oficial', e => e.oficial === 'Sí' ? 'Oficial' : 'Borrador'), h('th', { class: 'shrink' }, ''))),
-      h('tbody', {}, ...list.map(e => h('tr', { class: e.anulado ? '' : '', style: e.anulado ? { opacity: .5 } : null },
-        h('td', {}, fmtFecha(e.fecha)),
-        !compact ? h('td', { class: 'mono link', onclick: () => go('equipo', { inv: e.inv }) }, e.inv) : null,
-        h('td', {}, H.etiquetaTipoEvento(e), dup.has(e.id) ? h('span', { class: 'tag', style: { marginLeft: '5px', color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' }, title: 'Hay otra MP del mismo equipo en este mes' }, 'duplicada') : null),
+        TH('folio', 'N° Informe / Folio', e => e.folio || '—'),
+        h('th', {}, 'Pendientes'),
+        TH('obs', 'Observación', e => e.obs || '—'),
+        !compact ? TH('oficial', 'Oficial', e => e.oficial === 'Sí' ? 'Oficial' : 'Borrador') : null,
+        h('th', { class: 'shrink' }, ''))),
+      h('tbody', {}, ...list.map(e => h('tr', { style: e.anulado ? { opacity: .5 } : { cursor: 'pointer' }, title: e.anulado ? '' : 'Clic para editar el evento', onclick: e.anulado ? null : () => formEditarEvento(e) },
+        h('td', { class: 'nowrap' }, fmtFecha(e.fecha)),
+        !compact ? h('td', { class: 'mono link', onclick: ev => { stop(ev); go('equipo', { inv: e.inv }); } }, e.inv) : null,
+        h('td', {}, cap(compact ? 132 : 210, H.etiquetaTipoEvento(e),
+          dup.has(e.id) ? h('span', { class: 'tag', style: { marginLeft: '5px', color: 'var(--noop)', borderColor: 'color-mix(in srgb, var(--noop) 35%, var(--border))' }, title: 'Hay otra MP del mismo equipo en este mes' }, 'duplicada') : null,
+          (compact && !e.anulado && e.oficial !== 'Sí') ? h('span', { class: 'tag', style: { marginLeft: '5px' } }, 'borrador') : null)),
         h('td', { class: 'mono' }, e.resultado || '—'),
         h('td', {}, e.estado ? estadoPill(e.estado.replace(/ /g, '_').replace('en_servicio_técnico', 'en_servicio_tecnico')) : '—'),
-        h('td', { class: 'muted' }, e.ejecutor || '—'), h('td', { class: 'mono faint' }, e.folio || '—'),
-        h('td', { class: 'wrap', title: e.obs || '' }, e.obs ? e.obs : h('span', { class: 'faint' }, '—')),
-        h('td', {}, e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador')),
-        h('td', {}, e.anulado ? h('span', { class: 'faint', title: e.motivoAnulacion }, 'anulado') : eventMenu(e))
+        h('td', { class: 'muted' }, cap(compact ? 116 : 150, e.ejecutor || '—')), h('td', { class: 'mono faint' }, e.folio || '—'),
+        pendCell(e),
+        h('td', { title: e.obs || '' }, e.obs ? cap(compact ? 150 : 320, e.obs) : h('span', { class: 'faint' }, '—')),
+        !compact ? h('td', {}, e.oficial === 'Sí' ? h('span', { class: 'tag oficial' }, 'Oficial') : h('span', { class: 'tag' }, 'Borrador')) : null,
+        h('td', { onclick: stop }, e.anulado ? h('span', { class: 'faint', title: e.motivoAnulacion }, 'anulado') : eventMenu(e))
       )))));
   }
   function eventMenu(e) {
@@ -3451,6 +3469,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const items = [];
     if (e.oficial !== 'Sí') items.push(['Oficializar', () => { H.oficializarEvento(e); toast('Evento oficializado', 'success'); }]);
     items.push(['Editar', () => formEditarEvento(e)]);
+    items.push(['Crear pendiente de este evento', () => formNuevoPendiente({ inv: e.inv, eventoOrigen: e.id, desc: 'Derivado de: ' + H.etiquetaTipoEvento(e) + (e.folio ? ' (folio ' + e.folio + ')' : '') })]);
     items.push(['Anular', () => formAnularEvento(e), 'danger']);
     popover(anchor, items);
   }
@@ -3874,8 +3893,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function formNuevoPendiente(opts) {
     const inv = h('input', { type: 'text', list: 'eqlistp', value: opts.inv || '', placeholder: 'N° Inventario' });
     const dl = h('datalist', { id: 'eqlistp' }, ...H.getState().equipos.slice(0, 300).map(e => h('option', { value: e.inv }, e.equipo || '')));
-    const tipo = selectEl(Object.entries(TIPO_PENDIENTE), 'gestion_general');
-    const desc = h('textarea', { placeholder: 'Descripción del pendiente' });
+    const tipo = selectEl(Object.entries(TIPO_PENDIENTE), opts.tipo || 'gestion_general');
+    const desc = h('textarea', { placeholder: 'Descripción del pendiente' }, opts.desc || '');
     const ejec = selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], '');
     const fComp = h('input', { type: 'date' }); const fRec = h('input', { type: 'date' });
     openDrawer({
