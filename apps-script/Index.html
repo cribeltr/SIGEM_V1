@@ -4270,18 +4270,21 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
 
-    // 4) Respaldo de emergencia (JSON) — el respaldo principal es el Google Sheet
+    // 4) Respaldo — el Google Sheet ES el respaldo. Si está conectado, no se ofrece copia
+    // JSON (sería redundante). La copia JSON queda solo como salvavidas SIN conexión.
     root.appendChild(h('div', { class: 'section' },
-      h('div', { class: 's-hd' }, svg(ic.dl, 16), h('h3', {}, 'Respaldo de emergencia')),
-      h('div', { class: 's-bd' },
-        h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '6px' } }, 'Tu respaldo principal es el Google Sheet. Esta copia JSON es solo por seguridad (p. ej. antes de un cambio grande o sin conexión).'),
-        h('div', { class: 'btn-row' },
-          h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar copia JSON'),
-          h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar copia JSON')))));
+      h('div', { class: 's-hd' }, svg(ic.dl, 16), h('h3', {}, 'Respaldo')),
+      h('div', { class: 's-bd' }, Cloud.connected
+        ? h('div', { class: 'notice', style: { borderColor: 'color-mix(in srgb, var(--op) 35%, var(--border))', background: 'var(--op-bg)', color: 'color-mix(in srgb, var(--op) 80%, var(--text))' } }, '✓ Tus datos se guardan y respaldan automáticamente en el Google Sheet en cada cambio. No necesitas descargar copias.')
+        : h('div', {},
+          h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '6px' } }, 'Sin conexión al Google Sheet: los datos viven solo en este navegador. Descarga una copia JSON por seguridad o conéctate al Sheet en la sección de arriba.'),
+          h('div', { class: 'btn-row' },
+            h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar copia JSON'),
+            h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar copia JSON'))))));
     return root;
   };
 
-  function backupExport() { dl(new Blob([H.exportarBackupJSON()], { type: 'application/json' }), 'sigem-backup-' + H.hoyLocal() + '.json'); toast('Backup JSON exportado', 'success'); }
+  function backupExport() { dl(new Blob([H.exportarBackupJSON()], { type: 'application/json' }), 'HHHA-respaldo-' + H.hoyLocal() + '.json'); toast('Backup JSON exportado', 'success'); }
   function backupImport() {
     const inp = h('input', { type: 'file', accept: 'application/json', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const data = JSON.parse(await f.text()); const msg = `Importar backup?\n· Equipos: ${data.equipos?.length || 0}\n· Eventos: ${data.eventos?.length || 0}\nReemplaza los datos actuales.`; if (!window.confirm(msg)) return; const r = H.importarBackup(data); if (!r.ok) return toast(r.error, 'error'); toast(`Importado · ${r.eventos} eventos`, 'success'); go('inicio'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
     document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 1000);
