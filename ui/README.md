@@ -211,20 +211,24 @@ faltaba** en la UI, sin cambiar el diseño:
   Recepción (*N° envío original, Folio guía*), MP (*Ejecutor 2*), Envío (*Ejecutor*).
 - **Exportar Excel** → "Cuaderno de operaciones" autónomo, pensado para usarse **sin
   la aplicación**:
-  - **Inicio** — instrucciones de uso y **leyenda de códigos** (resultado de MP con la
-    descripción de cada causal C1–C8, y estados del equipo).
-  - **Inventario** — catálogo completo con estado, días en estado, encargado y
-    pendientes abiertos.
-  - **En servicio técnico** / **No operativos** — equipos en ese estado, con días en
-    estado, **última gestión** (fecha + detalle) y **días sin gestión**, encargado,
-    pendientes abiertos y el N° de informe/folio y apertura del ciclo correctivo abierto.
+  - **Inicio** — leyenda de códigos (MP/causales/estados) y mapa de relaciones entre hojas.
+  - **Inventario** — un registro por equipo: **ID_EQUIPO** (= N° Inventario, clave de unión),
+    carpeta, equipo, servicio/unidad/ubicación, procedencia, marca/modelo/serie, año, VUR,
+    clasificación y ENU/Baja.
+  - **Pendientes** — **ID_PENDIENTE**, N° Inv., equipo, tipo, descripción, responsable,
+    estado y compromiso.
+  - **Tareas** — **ID_Tareas**, N° Inv., equipo, tipo, descripción, responsable, estado y
+    compromiso (tipo/responsable/compromiso derivados del pendiente padre).
+  - **Tareas-Pendientes** — tabla puente **ID_PENDIENTE ↔ ID_TAREAS**.
+  - **Bitácora** — todos los eventos vigentes con **ID_BITACORA**: fechas, equipo, tipo,
+    resultado, estado, ejecutor y el detalle correctivo (folio, N° envío/OC/cotización,
+    empresa, técnico), observación y oficial.
+  - **Equipos en servicio técnico** / **Equipos no operativos** — equipos en ese estado, con
+    días en estado, **última gestión** y **días sin gestión**, encargado, pendientes abiertos
+    y el N° de informe/folio y apertura del ciclo correctivo abierto.
   - **Plan anual MP · año** — P/R (programado/realizado) por mes de cada equipo.
   - **Hoja de ruta · mes** — MP programadas del mes para **imprimir y registrar a
     mano**: columnas en blanco (✎) *Realizada · Fecha · Estado · Firma · Obs*.
-  - **Pendientes** — id, equipo, tipo, responsable, estado y fechas de compromiso.
-  - **Bitácora** — historial de eventos (registro manual; los importados se omiten).
-  - **Correctivos** — detalle de cada evento correctivo (N° informe, cotización, OC,
-    empresa, técnico, envío…) para consulta rápida.
   - **MP por mes** — resumen anual de cumplimiento (espejo de *Cumplimiento › Por mes*).
 
 ## Notas
