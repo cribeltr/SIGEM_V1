@@ -48,6 +48,7 @@
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', menu: 'M3 6h18M3 12h18M3 18h18',
     dl: 'M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16', up: 'M12 21V9m0 0l4 4m-4-4l-4 4M4 3h16',
     x: 'M6 6l12 12M18 6L6 18', chev: 'M9 6l6 6-6 6', dots: 'M12 5h.01M12 12h.01M12 19h.01',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
     funnel: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z'
   };
   function svg(d, w) { return h('span', { class: 'ico', html: `<svg width="${w || 17}" height="${w || 17}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d.split('M').filter(Boolean).map(p => `<path d="M${p}"/>`).join('')}</svg>` }); }
@@ -824,7 +825,7 @@
   function formHistorialCambios() {
     const S = H.getState();
     const all = (S.audit || []).slice().sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-    const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo' };
+    const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo', contacto: 'Contacto' };
     const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
     const v = x => (x === null || x === undefined || x === '') ? '—' : (x === false ? 'No' : x === true ? 'Sí' : String(x));
     let q = '', desde = '', hasta = '';
@@ -1846,7 +1847,7 @@
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos.'],
+        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos · Contactos.'],
         ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
         ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
@@ -1918,6 +1919,14 @@
     });
     sheets.push({ name: 'Equipos en servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
     sheets.push({ name: 'Equipos no operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
+
+    // CONTACTOS del servicio (referencia organizacional)
+    sheets.push({
+      name: 'Contactos', hidden: false, rows: [
+        ['Cargo', 'Nombre', 'Apellido', 'Anexo', 'Correo electrónico'],
+        ...H.getContactos().map(c => [c.cargo || '', c.nombre || '', c.apellido || '', c.anexo || '', c.correo || ''])
+      ]
+    });
     return sheets;
   }
 
@@ -1991,6 +2000,29 @@
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
+
+    // 3b) Contactos del servicio (supervisor, encargado de equipos, jefe CCRR)
+    const contactosBox = h('div', { class: 's-bd flush' });
+    const renderContactos = () => {
+      const list = H.getContactos();
+      mount(contactosBox, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Cargo'), h('th', {}, 'Nombre'), h('th', {}, 'Apellido'), h('th', {}, 'Anexo'), h('th', {}, 'Correo electrónico'), h('th', { class: 'shrink' }, ''))),
+        h('tbody', {}, ...list.map(c => {
+          const inp = (k, type, ph) => h('input', { type: type || 'text', value: c[k] || '', placeholder: ph || '', style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { [k]: e.target.value }); } });
+          return h('tr', {},
+            h('td', {}, inp('cargo', 'text', 'Cargo')),
+            h('td', {}, inp('nombre', 'text', 'Nombre')),
+            h('td', {}, inp('apellido', 'text', 'Apellido')),
+            h('td', {}, inp('anexo', 'text', 'Anexo')),
+            h('td', {}, inp('correo', 'email', 'correo@hospital.cl')),
+            h('td', {}, h('button', { class: 'btn icon ghost sm', title: 'Eliminar contacto', onclick: () => { if (window.confirm('¿Eliminar este contacto?')) { H.eliminarContacto(c.id); renderContactos(); } } }, svg(ic.x, 14))));
+        })))));
+    };
+    renderContactos();
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.users, 16), h('h3', {}, 'Contactos del servicio'), h('span', { class: 's-sub' }, 'supervisor de servicio clínico · encargado de equipos · jefe CCRR')),
+      contactosBox,
+      h('div', { class: 's-bd' }, h('button', { class: 'btn sm', onclick: () => { H.agregarContacto({ cargo: '' }); renderContactos(); } }, svg(ic.plus, 14), 'Agregar contacto'))));
 
     // 4) Respaldo — el Google Sheet ES el respaldo. Si está conectado, no se ofrece copia
     // JSON (sería redundante). La copia JSON queda solo como salvavidas SIN conexión.

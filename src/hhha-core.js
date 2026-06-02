@@ -105,7 +105,10 @@
   const DOCS_CORRECTIVO = ['Solicitud SIGEM con tarea cerrada', 'Cotización', 'Informe técnico trato directo', 'Orden de compra', 'Guía de despacho de repuestos', 'Informe visita diagnóstica', 'Informe visita correctiva', 'Hoja de envío', 'Informe técnico ST externo', 'Guía de despacho de retorno'];
   const DOCS_PREVENTIVO = ['Protocolo / hoja de MP', 'Pauta de monitoreo diario (DEA)', 'Firma jefe equipo médico', 'Informe técnico de empresa externa'];
 
-  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', pauta_monitoreo: 'Pauta de Monitoreo Diario', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  // Cargos de contacto del servicio (referencia organizacional, editable).
+  const CARGOS_CONTACTO = ['Supervisor de Servicio Clínico', 'Encargado de Equipos', 'Jefe del Centro de Responsabilidad CCRR'];
+  function contactosPorDefecto() { return CARGOS_CONTACTO.map((cargo, i) => ({ id: i + 1, nombre: '', apellido: '', anexo: '', correo: '', cargo })); }
   // Estados de pendiente orientados a la acción: No iniciado -> En proceso -> Resuelto.
   // 'cerrado' se conserva como estado final (= Resuelto) para no romper conteos (!== 'cerrado').
   const ESTADO_PEND_LABEL = { no_iniciado: 'No iniciado', en_proceso: 'En proceso', cerrado: 'Resuelto' };
@@ -163,9 +166,11 @@
     if (!d.conflictos) d.conflictos = [];
     if (!d.importaciones) d.importaciones = [];
     if (!d.prefs) d.prefs = {};
+    if (!d.contactos) d.contactos = contactosPorDefecto();
     d.counters = d.counters || {};
     if (d.counters.conflicto == null) d.counters.conflicto = (d.conflictos.length || 0) + 1;
     if (d.counters.importacion == null) d.counters.importacion = (d.importaciones.length || 0) + 1;
+    if (d.counters.contacto == null) d.counters.contacto = d.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
     // Normalizar estados de pendientes de versiones previas (creado/abierto -> no_iniciado).
     (d.pendientes || []).forEach(p => { p.estado = normalizarEstadoPend(p.estado); });
     d.__v = APP_VERSION;
@@ -332,10 +337,11 @@
       __created: new Date().toISOString(),
       __updated: new Date().toISOString(),
       equipos, eventos, ciclos, pendientes, tareas,
-      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1 },
+      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1, contacto: CARGOS_CONTACTO.length + 1 },
       audit: [],
       asignacionesMP: {},
       correos: [],
+      contactos: contactosPorDefecto(),
       conflictos: [],
       importaciones: [],
       prefs: {}
@@ -1532,6 +1538,36 @@
     return { ok: true, pendiente: p };
   }
 
+  // ---- Contactos del servicio (referencia organizacional) ------------------
+  function getContactos() { return state.contactos || (state.contactos = contactosPorDefecto()); }
+  function agregarContacto(c) {
+    c = c || {};
+    state.contactos = state.contactos || [];
+    if (state.counters.contacto == null) state.counters.contacto = state.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+    const nuevo = { id: state.counters.contacto++, nombre: c.nombre || '', apellido: c.apellido || '', anexo: c.anexo || '', correo: c.correo || '', cargo: c.cargo || '' };
+    state.contactos.push(nuevo);
+    audit('contacto', nuevo.id, 'creado', null, nuevo.cargo || '');
+    save();
+    return { ok: true, contacto: nuevo };
+  }
+  function actualizarContacto(id, campos) {
+    const c = (state.contactos || []).find(x => x.id === id);
+    if (!c) return { ok: false, error: 'Contacto no encontrado' };
+    ['nombre', 'apellido', 'anexo', 'correo', 'cargo'].forEach(k => {
+      if (campos && (k in campos)) { const v = campos[k] == null ? '' : String(campos[k]); if (c[k] !== v) { audit('contacto', c.id, k, c[k], v); c[k] = v; } }
+    });
+    save();
+    return { ok: true, contacto: c };
+  }
+  function eliminarContacto(id) {
+    const i = (state.contactos || []).findIndex(x => x.id === id);
+    if (i < 0) return { ok: false, error: 'Contacto no encontrado' };
+    const c = state.contactos.splice(i, 1)[0];
+    audit('contacto', id, 'eliminado', c ? c.cargo : '', null);
+    save();
+    return { ok: true };
+  }
+
   // Actualiza campos editables de un pendiente. (Núcleo del "Guardar" de abrirPendiente.)
   // cambios = {tipo, estado, ejecutor, desc, fechaComp, proxRecord}
   function actualizarPendiente(p, cambios) {
@@ -1890,7 +1926,9 @@
     APP_VERSION, STORAGE_KEY, MESES, MES_NUM, NUM_MES, MES_ESPANOL, EJECUTORES,
     TIPOS_EVENTO, CAUSALES, ESTADOS_PRIMARIOS, ESTADO_LABEL, SUBESTADOS_NOOP,
     SUBESTADOS_ST, DOCS_CORRECTIVO, DOCS_PREVENTIVO, TIPO_PENDIENTE, ESTADO_PEND_LABEL,
-    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
+    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP, CARGOS_CONTACTO,
+    // contactos del servicio
+    getContactos, agregarContacto, actualizarContacto, eliminarContacto,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
     normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, asignarIdsEquipos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,

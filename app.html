@@ -665,7 +665,10 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
   const DOCS_CORRECTIVO = ['Solicitud SIGEM con tarea cerrada', 'Cotización', 'Informe técnico trato directo', 'Orden de compra', 'Guía de despacho de repuestos', 'Informe visita diagnóstica', 'Informe visita correctiva', 'Hoja de envío', 'Informe técnico ST externo', 'Guía de despacho de retorno'];
   const DOCS_PREVENTIVO = ['Protocolo / hoja de MP', 'Pauta de monitoreo diario (DEA)', 'Firma jefe equipo médico', 'Informe técnico de empresa externa'];
 
-  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', pauta_monitoreo: 'Pauta de Monitoreo Diario', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  // Cargos de contacto del servicio (referencia organizacional, editable).
+  const CARGOS_CONTACTO = ['Supervisor de Servicio Clínico', 'Encargado de Equipos', 'Jefe del Centro de Responsabilidad CCRR'];
+  function contactosPorDefecto() { return CARGOS_CONTACTO.map((cargo, i) => ({ id: i + 1, nombre: '', apellido: '', anexo: '', correo: '', cargo })); }
   // Estados de pendiente orientados a la acción: No iniciado -> En proceso -> Resuelto.
   // 'cerrado' se conserva como estado final (= Resuelto) para no romper conteos (!== 'cerrado').
   const ESTADO_PEND_LABEL = { no_iniciado: 'No iniciado', en_proceso: 'En proceso', cerrado: 'Resuelto' };
@@ -723,9 +726,11 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     if (!d.conflictos) d.conflictos = [];
     if (!d.importaciones) d.importaciones = [];
     if (!d.prefs) d.prefs = {};
+    if (!d.contactos) d.contactos = contactosPorDefecto();
     d.counters = d.counters || {};
     if (d.counters.conflicto == null) d.counters.conflicto = (d.conflictos.length || 0) + 1;
     if (d.counters.importacion == null) d.counters.importacion = (d.importaciones.length || 0) + 1;
+    if (d.counters.contacto == null) d.counters.contacto = d.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
     // Normalizar estados de pendientes de versiones previas (creado/abierto -> no_iniciado).
     (d.pendientes || []).forEach(p => { p.estado = normalizarEstadoPend(p.estado); });
     d.__v = APP_VERSION;
@@ -892,10 +897,11 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
       __created: new Date().toISOString(),
       __updated: new Date().toISOString(),
       equipos, eventos, ciclos, pendientes, tareas,
-      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1 },
+      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1, contacto: CARGOS_CONTACTO.length + 1 },
       audit: [],
       asignacionesMP: {},
       correos: [],
+      contactos: contactosPorDefecto(),
       conflictos: [],
       importaciones: [],
       prefs: {}
@@ -2092,6 +2098,36 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     return { ok: true, pendiente: p };
   }
 
+  // ---- Contactos del servicio (referencia organizacional) ------------------
+  function getContactos() { return state.contactos || (state.contactos = contactosPorDefecto()); }
+  function agregarContacto(c) {
+    c = c || {};
+    state.contactos = state.contactos || [];
+    if (state.counters.contacto == null) state.counters.contacto = state.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+    const nuevo = { id: state.counters.contacto++, nombre: c.nombre || '', apellido: c.apellido || '', anexo: c.anexo || '', correo: c.correo || '', cargo: c.cargo || '' };
+    state.contactos.push(nuevo);
+    audit('contacto', nuevo.id, 'creado', null, nuevo.cargo || '');
+    save();
+    return { ok: true, contacto: nuevo };
+  }
+  function actualizarContacto(id, campos) {
+    const c = (state.contactos || []).find(x => x.id === id);
+    if (!c) return { ok: false, error: 'Contacto no encontrado' };
+    ['nombre', 'apellido', 'anexo', 'correo', 'cargo'].forEach(k => {
+      if (campos && (k in campos)) { const v = campos[k] == null ? '' : String(campos[k]); if (c[k] !== v) { audit('contacto', c.id, k, c[k], v); c[k] = v; } }
+    });
+    save();
+    return { ok: true, contacto: c };
+  }
+  function eliminarContacto(id) {
+    const i = (state.contactos || []).findIndex(x => x.id === id);
+    if (i < 0) return { ok: false, error: 'Contacto no encontrado' };
+    const c = state.contactos.splice(i, 1)[0];
+    audit('contacto', id, 'eliminado', c ? c.cargo : '', null);
+    save();
+    return { ok: true };
+  }
+
   // Actualiza campos editables de un pendiente. (Núcleo del "Guardar" de abrirPendiente.)
   // cambios = {tipo, estado, ejecutor, desc, fechaComp, proxRecord}
   function actualizarPendiente(p, cambios) {
@@ -2450,7 +2486,9 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     APP_VERSION, STORAGE_KEY, MESES, MES_NUM, NUM_MES, MES_ESPANOL, EJECUTORES,
     TIPOS_EVENTO, CAUSALES, ESTADOS_PRIMARIOS, ESTADO_LABEL, SUBESTADOS_NOOP,
     SUBESTADOS_ST, DOCS_CORRECTIVO, DOCS_PREVENTIVO, TIPO_PENDIENTE, ESTADO_PEND_LABEL,
-    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
+    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP, CARGOS_CONTACTO,
+    // contactos del servicio
+    getContactos, agregarContacto, actualizarContacto, eliminarContacto,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
     normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, asignarIdsEquipos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
@@ -2549,6 +2587,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', menu: 'M3 6h18M3 12h18M3 18h18',
     dl: 'M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16', up: 'M12 21V9m0 0l4 4m-4-4l-4 4M4 3h16',
     x: 'M6 6l12 12M18 6L6 18', chev: 'M9 6l6 6-6 6', dots: 'M12 5h.01M12 12h.01M12 19h.01',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
     funnel: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z'
   };
   function svg(d, w) { return h('span', { class: 'ico', html: `<svg width="${w || 17}" height="${w || 17}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d.split('M').filter(Boolean).map(p => `<path d="M${p}"/>`).join('')}</svg>` }); }
@@ -3325,7 +3364,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function formHistorialCambios() {
     const S = H.getState();
     const all = (S.audit || []).slice().sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-    const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo' };
+    const ENT = { equipo: 'Equipo', evento: 'Evento', pendiente: 'Pendiente', tarea: 'Tarea', ciclo: 'Ciclo', contacto: 'Contacto' };
     const fhora = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString('es-CL'); };
     const v = x => (x === null || x === undefined || x === '') ? '—' : (x === false ? 'No' : x === true ? 'Sí' : String(x));
     let q = '', desde = '', hasta = '';
@@ -4347,7 +4386,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos.'],
+        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos · Contactos.'],
         ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
         ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
@@ -4419,6 +4458,14 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     });
     sheets.push({ name: 'Equipos en servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
     sheets.push({ name: 'Equipos no operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
+
+    // CONTACTOS del servicio (referencia organizacional)
+    sheets.push({
+      name: 'Contactos', hidden: false, rows: [
+        ['Cargo', 'Nombre', 'Apellido', 'Anexo', 'Correo electrónico'],
+        ...H.getContactos().map(c => [c.cargo || '', c.nombre || '', c.apellido || '', c.anexo || '', c.correo || ''])
+      ]
+    });
     return sheets;
   }
 
@@ -4492,6 +4539,29 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     renderMaint();
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, svg(ic.config, 16), h('h3', {}, 'Mantenimiento de datos'), h('span', { class: 's-sub' }, 'limpieza en una pasada')), maint));
+
+    // 3b) Contactos del servicio (supervisor, encargado de equipos, jefe CCRR)
+    const contactosBox = h('div', { class: 's-bd flush' });
+    const renderContactos = () => {
+      const list = H.getContactos();
+      mount(contactosBox, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Cargo'), h('th', {}, 'Nombre'), h('th', {}, 'Apellido'), h('th', {}, 'Anexo'), h('th', {}, 'Correo electrónico'), h('th', { class: 'shrink' }, ''))),
+        h('tbody', {}, ...list.map(c => {
+          const inp = (k, type, ph) => h('input', { type: type || 'text', value: c[k] || '', placeholder: ph || '', style: { width: '100%' }, onchange: e => { H.actualizarContacto(c.id, { [k]: e.target.value }); } });
+          return h('tr', {},
+            h('td', {}, inp('cargo', 'text', 'Cargo')),
+            h('td', {}, inp('nombre', 'text', 'Nombre')),
+            h('td', {}, inp('apellido', 'text', 'Apellido')),
+            h('td', {}, inp('anexo', 'text', 'Anexo')),
+            h('td', {}, inp('correo', 'email', 'correo@hospital.cl')),
+            h('td', {}, h('button', { class: 'btn icon ghost sm', title: 'Eliminar contacto', onclick: () => { if (window.confirm('¿Eliminar este contacto?')) { H.eliminarContacto(c.id); renderContactos(); } } }, svg(ic.x, 14))));
+        })))));
+    };
+    renderContactos();
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, svg(ic.users, 16), h('h3', {}, 'Contactos del servicio'), h('span', { class: 's-sub' }, 'supervisor de servicio clínico · encargado de equipos · jefe CCRR')),
+      contactosBox,
+      h('div', { class: 's-bd' }, h('button', { class: 'btn sm', onclick: () => { H.agregarContacto({ cargo: '' }); renderContactos(); } }, svg(ic.plus, 14), 'Agregar contacto'))));
 
     // 4) Respaldo — el Google Sheet ES el respaldo. Si está conectado, no se ofrece copia
     // JSON (sería redundante). La copia JSON queda solo como salvavidas SIN conexión.
