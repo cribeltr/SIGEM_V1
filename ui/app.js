@@ -129,13 +129,12 @@
 
   // ============================ ROUTER ======================================
   const NAV = [
-    { id: 'inicio', label: 'Cola de trabajo', icon: 'inicio' },
+    { id: 'inicio', label: 'Hoy', icon: 'inicio' },
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
     { id: 'tablero', label: 'Tablero', icon: 'tablero' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' },
-    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
-    { id: 'configuracion', label: 'Configuración', icon: 'config' }
+    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' }
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
@@ -144,7 +143,6 @@
     view = v; params = p || {}; kbList = null;
     const newHash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : '');
     if (location.hash !== newHash) { suppressHash = true; location.hash = newHash; }
-    const a = document.querySelector('.app'); if (a) a.classList.remove('rail-open');
     renderView(); syncNav(); window.scrollTo && $('#view') && ($('#view').scrollTop = 0);
   }
   function fromHash() {
@@ -658,7 +656,7 @@
         + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
       : null;
     return h('div', { class: 'view-narrow' },
-      h('div', { class: 'tb-title', style: { marginBottom: '10px', fontSize: '12px' } },
+      h('div', { style: { marginBottom: '10px', fontSize: '12px' } },
         h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
       head, banner, tabs, body);
   };
@@ -2189,11 +2187,10 @@
   }
 
   // ============================ chrome (rail/topbar) ========================
-  const railNav = h('div', { class: 'nav' });
+  const railNav = h('nav', { class: 'topnav' });
   const navItems = {};
   function buildRail() {
-    mount(railNav, h('div', { class: 'nav-group-lbl' }, 'Trabajo'),
-      ...NAV.map(n => { const it = h('div', { class: 'nav-item', onclick: () => go(n.id) }, svg(ic[n.icon]), h('span', {}, n.label), h('span', { class: 'badge-count', style: { display: 'none' } })); navItems[n.id] = it; return it; }));
+    mount(railNav, ...NAV.map(n => { const it = h('button', { class: 'nav-item', onclick: () => go(n.id) }, svg(ic[n.icon], 16), h('span', {}, n.label), h('span', { class: 'badge-count', style: { display: 'none' } })); navItems[n.id] = it; return it; }));
   }
   function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos') || (view === 'asignaciones' && id === 'cumplimiento')); }
   function refreshChrome() {
@@ -2215,7 +2212,9 @@
     const node = v();
     mount($('#view'), node);
     const titles = { inicio: 'Cola de trabajo', equipos: 'Equipos', tablero: 'Tablero por estado', equipo: 'Ficha de equipo', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes · detalle', cumplimiento: 'Cumplimiento por servicio', configuracion: 'Configuración' };
-    $('#tb-title').textContent = titles[view] || 'Gestión Equipos Críticos HHHA';
+    const t = titles[view] || 'Gestión Equipos Críticos HHHA';
+    const tt = $('#tb-title'); if (tt) tt.textContent = t;
+    document.title = 'Gestión Equipos Críticos HHHA' + (view === 'inicio' ? '' : ' · ' + t);
   }
 
   // ============================ helpers final ===============================
@@ -2246,27 +2245,19 @@
     H.bootstrapDatos();
 
     const app = h('div', { class: 'app' },
-      h('div', { class: 'rail-scrim', onclick: () => document.querySelector('.app').classList.remove('rail-open') }),
-      h('aside', { class: 'rail' },
-        h('div', { class: 'rail-top' }, h('div', { class: 'logo' }, h('span', { class: 'mark' }, 'H'), h('span', {}, 'HHHA', h('br'), h('small', {}, 'Equipos Críticos')))),
+      h('header', { class: 'topbar' },
+        h('div', { class: 'brand', title: 'Gestión Equipos Críticos HHHA' }, h('span', { class: 'mark' }, 'H'), h('span', { class: 'brand-name s-hide' }, 'HHHA')),
         railNav,
-        h('div', { class: 'rail-foot' }, h('div', { class: 'u-avatar' }, 'C'),
-          h('div', { style: { display: 'flex', flexDirection: 'column', lineHeight: '1.2', minWidth: 0 } },
-            h('span', { class: 'u-name' }, 'Cristian'),
-            h('span', { class: 'faint', style: { fontSize: '10px' }, title: 'Versión de la interfaz' }, APP_VERSION)))),
-      h('div', { class: 'main' },
-        h('header', { class: 'topbar' },
-          h('button', { class: 'btn icon ghost', title: 'Menú', onclick: () => { const a = document.querySelector('.app'); if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) a.classList.toggle('rail-open'); else a.classList.toggle('rail-collapsed'); } }, svg(ic.menu, 17)),
-          h('div', { class: 'tb-title', id: 'tb-title' }, 'Cola de trabajo'),
-          h('div', { class: 'tb-spacer' }),
-          h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted s-hide' }, 'Buscar…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
-          h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
-          h('button', { class: 'btn icon ghost', id: 'btn-density', title: 'Densidad', onclick: () => applyDensity(document.documentElement.getAttribute('data-density') === 'comodo' ? 'compacto' : 'comodo') }, svg(ic.density, 16)),
-          h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
-          h('button', { class: 'btn sm tb-data', title: 'Exportar Excel', onclick: excelExport }, '⤓ Excel'),
-          h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
-        ),
-        h('main', { class: 'view', id: 'view' })));
+        h('div', { class: 'tb-spacer' }),
+        h('div', { class: 'search-pill', onclick: () => openCmdk() }, svg(ic.search, 15), h('span', { class: 'muted s-hide' }, 'Buscar…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
+        h('span', { class: 'pill muted s-hide', id: 'state-ind', title: 'Cambios desde el arranque' }, '0 cambios'),
+        h('button', { class: 'btn icon ghost', id: 'btn-density', title: 'Densidad', onclick: () => applyDensity(document.documentElement.getAttribute('data-density') === 'comodo' ? 'compacto' : 'comodo') }, svg(ic.density, 16)),
+        h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
+        h('button', { class: 'btn icon ghost s-hide', title: 'Exportar libro Excel', onclick: excelExport }, svg(ic.dl, 16)),
+        h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
+        h('span', { class: 'u-avatar', title: 'Cristian · ' + APP_VERSION }, 'C'),
+        h('span', { id: 'tb-title', style: { display: 'none' } })),
+      h('main', { class: 'view', id: 'view' }));
     mount(document.getElementById('root'), app);
 
     buildRail();
