@@ -31,6 +31,8 @@ Carga: `lz-string` → `../src/seed-data.js` → `../src/hhha-core.js` → `xlsx
   baja·gris, desconocido·slate. Consistente en pills, badges y matriz MP.
 - **Teclado**: command palette central + atajos (abajo).
 - **Tema** claro/oscuro con un toque (persistente).
+- **Densidad** compacta/cómoda con un toque (persistente): "cómoda" agranda filas, tarjetas
+  y controles para mejor lectura; "compacta" es la vista densa de alta información.
 
 ## Atajos de teclado
 | Tecla | Acción |
