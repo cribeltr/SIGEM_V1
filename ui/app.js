@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.1';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.2';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -702,6 +702,7 @@
     const S = H.getState();
     let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
+    let vmode = 'equipo';   // 'equipo' = 1 fila/equipo · 'mes' = 1 fila por equipo y mes con MP
     const cf = colFilters(render);
     const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
     const eqSel = new Set();
@@ -744,6 +745,7 @@
     }
     function render() {
       const list = data();
+      if (vmode === 'mes') return renderMes(list);
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
       const th = (key, lbl, cls, getter) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
         h('span', { class: 'th-lbl' }, lbl), sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null, getter ? cf.btn(key, lbl, getter) : null);
@@ -775,6 +777,22 @@
       kbList = { rows: list.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
+    // Formato "por mes": una fila por equipo y por cada mes con MP programada (Mes · Tipo · Resultado).
+    function renderMes(list) {
+      const rows = [];
+      list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) if (H.mpProgramadaEnMes(e, MESES[i])) rows.push({ e, i }); });
+      countNote.textContent = `${rows.length} fila(s) · ${new Set(rows.map(r => r.e.inv)).size} equipo(s)`;
+      const TH = lbl => h('th', {}, h('span', { class: 'th-lbl' }, lbl));
+      const resCell = (e, i) => { const r = H.resultadoMPMes(e, YEAR, i); if (!r) return h('span', { class: 'pill st' }, 'Pendiente'); if (r === 'Si') return h('span', { class: 'pill op' }, 'Sí'); if (r === 'Baja') return h('span', { class: 'pill baja' }, 'Baja'); if (r === 'No') return h('span', { class: 'faint' }, 'No'); return h('span', { class: 'pill noop' }, r); };
+      mount(tblWrap, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, ['ID', 'N° Inv.', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Freq', 'Mes', 'Tipo', 'Resultado'].map(TH))),
+        h('tbody', {}, ...rows.map(({ e, i }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
+          h('td', { class: 'num muted' }, e.id), h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(180, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
+          h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
+          h('td', { class: 'muted' }, e.freq || '—'), h('td', {}, MES_ESP(i)), h('td', { class: 'mono' }, (e.prog || {})[MESES[i]] || '—'), h('td', {}, resCell(e, i)))))));
+      kbList = { rows: rows.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
+      updBulk();
+    }
 
     const qInput = h('input', { type: 'search', placeholder: 'Buscar inv, equipo, serie, marca…', value: f.q, oninput: e => { f.q = e.target.value; render(); } });
     const seg = h('div', { class: 'seg' }, ...[['todos', 'Todos'], ['operativo', 'Operativos'], ['no_operativo', 'No oper.'], ['en_servicio_tecnico', 'Serv. téc.'], ['baja', 'Baja']].map(([v, l]) =>
@@ -785,14 +803,17 @@
     if (params.mpAtras) chips.push('MP atrasadas');
     if (params.sinProg) chips.push('Sin programación MP');
     const incomingChip = chips.length ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, chips.join(' · ')), h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
+    const vToggle = h('div', { class: 'seg', title: 'Vista de la tabla' },
+      h('button', { class: vmode === 'equipo' ? 'on' : '', onclick: e => { vmode = 'equipo'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por equipo'),
+      h('button', { class: vmode === 'mes' ? 'on' : '', onclick: e => { vmode = 'mes'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por mes'));
     const root = h('div', {},
-      h('div', { class: 'filterbar' }, qInput, seg,
+      h('div', { class: 'filterbar' }, qInput, seg, vToggle,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
         field(null, selectEl([['', 'Toda familia'], ...familias.map(s => [s, s])], f.fam, { onchange: e => { f.fam = e.target.value; render(); } })),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.sinEnc = e.target.checked; render(); } }), 'Sin encargado'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.sinProg ? true : false, onchange: e => { f.sinProg = e.target.checked; render(); } }), 'Sin prog. MP'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => exportarEquipos(data()) }, svg(ic.dl, 14), 'Exportar'),
+        h('button', { class: 'btn sm', onclick: () => (vmode === 'mes' ? exportarEquiposMes(data()) : exportarEquipos(data())) }, svg(ic.dl, 14), 'Exportar'),
         incomingChip, countNote),
       bulkBar, tblWrap);
     render();
@@ -803,6 +824,13 @@
     const header = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Familia', 'Marca', 'Modelo', 'Serie', 'Freq MP', 'Estado', 'Días', 'Encargado', 'Pend. abiertos', `MP ${MES_ESP(MONTH)}`];
     const rows = list.map(e => [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.fam || '', e.marca || '', e.modelo || '', e.serie || '', e.freq || '', ESTADO_LABEL[e.estado] || e.estado, H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, estLbl[H.mpEstadoMes(e, YEAR, MONTH)] || '']);
     exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_equipos_${H.hoyLocal()}.xlsx`);
+  }
+  // Export "por mes": una fila por equipo y mes con MP programada (reproduce Eventos_MP).
+  function exportarEquiposMes(list) {
+    const header = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Mes', 'Tipo', 'Resultado'];
+    const rows = [];
+    list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) { if (!H.mpProgramadaEnMes(e, MESES[i])) continue; rows.push([e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente']); } });
+    exportTablaExcel('Eventos_MP', 'Eventos MP por mes · ' + H.hoyLocal(), header, rows, `HHHA_eventos_MP_${YEAR}.xlsx`);
   }
   function mpMesBadge(e) {
     if (e.estado === 'baja') return h('span', { class: 'faint' }, '—');
