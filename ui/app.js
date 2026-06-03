@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.13';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.14';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -721,7 +721,7 @@
     let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
     let vmode = 'equipo';   // 'equipo' = 1 fila/equipo · 'mes' = 1 fila por equipo y mes con MP
-    let gmode = 'resultado';   // Carta Gantt: 'resultado' | 'cumpl' (programado vs realizado)
+    let gmode = (localStorage.getItem('sigem_gantt_mode') === 'cumpl') ? 'cumpl' : 'resultado';   // Carta Gantt: se recuerda entre sesiones
     const cf = colFilters(render);
     const cfMes = colFilters(render);   // filtros tipo Excel para el modo "Por mes" (filas equipo×mes)
     const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
@@ -877,9 +877,10 @@
       const eqs = list.filter(e => e.estado !== 'baja');
       const CAP = 250, capped = eqs.length > CAP, shown = eqs.slice(0, CAP);
       countNote.textContent = `${eqs.length} equipo(s) · MP ${YEAR}` + (capped ? ` · mostrando ${CAP}` : '');
+      const setGmode = v => { gmode = v; try { localStorage.setItem('sigem_gantt_mode', v); } catch (e) {} render(); };
       const gToggle = h('div', { class: 'seg', title: 'Qué muestra cada celda' },
-        h('button', { class: gmode === 'resultado' ? 'on' : '', onclick: () => { gmode = 'resultado'; render(); } }, 'Resultado'),
-        h('button', { class: gmode === 'cumpl' ? 'on' : '', onclick: () => { gmode = 'cumpl'; render(); } }, 'Programado vs realizado'));
+        h('button', { class: gmode === 'resultado' ? 'on' : '', onclick: () => setGmode('resultado') }, 'Resultado'),
+        h('button', { class: gmode === 'cumpl' ? 'on' : '', onclick: () => setGmode('cumpl') }, 'Programado vs realizado'));
       const legend = gmode === 'cumpl'
         ? h('div', { class: 'gantt-legend' },
           h('span', {}, h('i', { class: 'g-ok' }), '✓ Realizada'),
