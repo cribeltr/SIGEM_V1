@@ -2288,6 +2288,7 @@
           h('div', { class: 'btn-row' },
             h('button', { class: 'btn sm', onclick: backupExport }, svg(ic.dl, 14), 'Descargar copia JSON'),
             h('button', { class: 'btn sm', onclick: backupImport }, svg(ic.up, 14), 'Importar copia JSON'))))));
+    root.appendChild(h('div', { class: 'faint', style: { fontSize: '11px', textAlign: 'center', padding: '10px 0 2px' } }, 'Gestión Equipos Críticos HHHA · build ' + APP_VERSION));
     return root;
   };
 

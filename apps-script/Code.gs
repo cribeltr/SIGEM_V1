@@ -1,5 +1,5 @@
 /****************************************************************************
- * SIGEM · Backend de almacenamiento en Google Sheets (Apps Script Web App)
+ * Gestión Equipos Críticos HHHA · Backend de almacenamiento en Google Sheets (Apps Script Web App)
  * --------------------------------------------------------------------------
  * Guarda el estado de SIGEM (JSON comprimido) en una hoja OCULTA `_SIGEM_DATA`
  * y escribe además las hojas de trabajo legibles que envía la app (para poder
@@ -35,7 +35,7 @@ function doGet(e) {
     // Por defecto: SERVIR LA APP (verla desde cualquier parte con la URL .../exec).
     try {
       return HtmlService.createHtmlOutputFromFile('Index')
-        .setTitle('SIGEM · Equipos Biomédicos Críticos')
+        .setTitle('Gestión Equipos Críticos HHHA')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     } catch (e2) {
