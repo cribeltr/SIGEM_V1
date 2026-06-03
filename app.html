@@ -2778,7 +2778,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.9';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.10';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2814,6 +2814,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const drawer = h('aside', { class: 'drawer' }); document.body.appendChild(drawer);
   let drawerOpen = false;
   function openDrawer(opts) {
+    if (typeof Grab !== 'undefined') Grab.log('formulario', 'Abrir: ' + (opts.title || ''));
     mount(drawer,
       h('div', { class: 'd-hd' }, h('h2', {}, opts.title), h('button', { class: 'btn icon ghost', onclick: () => closeDrawer() }, svg(ic.x, 16))),
       h('div', { class: 'd-bd' }, opts.body),
@@ -2904,7 +2905,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   function exportarGrabacion(g) {
     const fin = new Date(); const durS = Math.max(0, Math.round((fin - g.ini) / 1000));
     const fmtDur = s => (s >= 3600 ? Math.floor(s / 3600) + ' h ' : '') + Math.floor((s % 3600) / 60) + ' min ' + (s % 60) + ' s';
-    const TIPO = { inicio: 'Inicio', fin: 'Fin', pantalla: 'Pantalla', clic: 'Clic', resultado: 'Resultado', error: 'Error' };
+    const TIPO = { inicio: 'Inicio', fin: 'Fin', pantalla: 'Pantalla', clic: 'Clic', resultado: 'Resultado', error: 'Error', formulario: 'Formulario', campo: 'Campo', busqueda: 'Búsqueda' };
     let prev = null;
     const filas = g.pasos.map((p, i) => {
       let d = ''; if (prev) { const dt = (new Date(p.ts) - new Date(prev)) / 1000; if (isFinite(dt) && dt >= 0) d = Math.round(dt); } prev = p.ts;
@@ -2913,13 +2914,35 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     });
     const pantallas = [...new Set(g.pasos.filter(p => p.vista).map(p => TIT_VISTA[p.vista] || p.vista))];
     const errs = g.pasos.filter(p => p.tipo === 'error');
+    const hora = ts => { try { return new Date(ts).toLocaleString('es-CL'); } catch (x) { return ts; } };
+    // Tiempo por pantalla y pausas largas (atribuye el Δ de cada paso a la pantalla en que se estaba).
+    const tpv = {}; const gaps = [];
+    for (let i = 0; i < g.pasos.length - 1; i++) {
+      const a = g.pasos[i], dt = (new Date(g.pasos[i + 1].ts) - new Date(a.ts)) / 1000;
+      if (!isFinite(dt) || dt < 0) continue;
+      const v = TIT_VISTA[a.vista] || a.vista || '—';
+      tpv[v] = (tpv[v] || 0) + dt;
+      gaps.push({ s: Math.round(dt), v, accion: a.accion });
+    }
+    const tpvList = Object.keys(tpv).map(v => [v, fmtDur(Math.round(tpv[v]))]).sort((a, b) => tpv[b[0]] - tpv[a[0]]);
+    const topGaps = gaps.filter(x => x.s >= 5).sort((a, b) => b.s - a.s).slice(0, 8);
+    const acciones = g.pasos.filter(p => p.tipo === 'resultado');
+    const forms = g.pasos.filter(p => p.tipo === 'formulario');
+    const campos = g.pasos.filter(p => p.tipo === 'campo');
+    const busquedas = g.pasos.filter(p => p.tipo === 'busqueda');
     const resumen = [
       ['GRABACIÓN DE SESIÓN · ' + APP_VERSION],
       ['Inicio', g.ini.toLocaleString('es-CL')], ['Fin', fin.toLocaleString('es-CL')], ['Duración', fmtDur(durS)],
       ['Pasos registrados', g.pasos.length], ['Clics', g.pasos.filter(p => p.tipo === 'clic').length],
-      ['Pantallas visitadas', pantallas.length], ['Errores detectados', errs.length], [],
+      ['Pantallas visitadas', pantallas.length], ['Formularios abiertos', forms.length], ['Campos completados', campos.length],
+      ['Búsquedas', busquedas.length], ['Acciones realizadas', acciones.length], ['Errores detectados', errs.length], [],
+      ['TIEMPO POR PANTALLA'], ...(tpvList.length ? tpvList : [['(sin datos)']]), [],
+      ['PAUSAS MÁS LARGAS (dónde se detuvo)'], ...(topGaps.length ? topGaps.map(x => [x.s + ' s', x.v, x.accion]) : [['(sin pausas)']]), [],
+      ['ACCIONES REALIZADAS'], ...(acciones.length ? acciones.map(a => [hora(a.ts), a.accion]) : [['(ninguna)']]), [],
+      ['FORMULARIOS ABIERTOS'], ...(forms.length ? forms.map(a => [hora(a.ts), a.accion]) : [['(ninguno)']]), [],
+      ['BÚSQUEDAS'], ...(busquedas.length ? busquedas.map(a => [hora(a.ts), a.accion]) : [['(ninguna)']]), [],
       ['PANTALLAS VISITADAS'], ...pantallas.map(p => [p]), [],
-      ['ERRORES / AVISOS DE ERROR'], ...(errs.length ? errs.map(e => { let hh = e.ts; try { hh = new Date(e.ts).toLocaleString('es-CL'); } catch (x) {} return [hh, e.accion]; }) : [['(ninguno)']])
+      ['ERRORES / AVISOS DE ERROR'], ...(errs.length ? errs.map(e => [hora(e.ts), e.accion]) : [['(ninguno)']])
     ];
     const fnameTs = new Date().toISOString().slice(0, 16).replace('T', '_').replace(/:/g, '');
     if (!window.XLSX) { dl(new Blob([JSON.stringify({ version: APP_VERSION, inicio: g.ini, fin, durSeg: durS, pasos: g.pasos }, null, 2)], { type: 'application/json' }), 'HHHA_grabacion_' + fnameTs + '.json'); return; }
@@ -4892,7 +4915,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
   // ============================ command palette =============================
   const cmdkScrim = h('div', { class: 'cmdk-scrim', onclick: () => closeCmdk() }); document.body.appendChild(cmdkScrim);
-  let cmdkEl = null, cmdkIdx = 0, cmdkItems = [];
+  let cmdkEl = null, cmdkIdx = 0, cmdkItems = [], _cmdkQ = '';
   function openCmdk() {
     const input = h('input', { type: 'text', placeholder: 'Buscar equipo o acción…  (Esc para cerrar)' });
     const listEl = h('div', { class: 'cmdk-list' });
@@ -4908,7 +4931,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       ['Exportar Excel', () => { closeCmdk(); excelExport(); }, '⭳']
     ];
     function render(q) {
-      cmdkItems = []; clear(listEl); cmdkIdx = 0;
+      cmdkItems = []; clear(listEl); cmdkIdx = 0; _cmdkQ = q || '';
       const nq = norm(q);
       const acts = actions.filter(a => !nq || norm(a[0]).includes(nq));
       if (acts.length) { listEl.appendChild(h('div', { class: 'cmdk-sec' }, 'Acciones')); acts.forEach(a => addItem(a[2], a[0], '', a[1])); }
@@ -4929,7 +4952,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     });
     render(''); setTimeout(() => input.focus(), 30);
   }
-  function closeCmdk() { cmdkEl && cmdkEl.remove(); cmdkEl = null; cmdkScrim.classList.remove('on'); }
+  function closeCmdk() { if (_cmdkQ && _cmdkQ.trim() && typeof Grab !== 'undefined') Grab.log('busqueda', 'Buscó: ' + _cmdkQ.trim()); _cmdkQ = ''; cmdkEl && cmdkEl.remove(); cmdkEl = null; cmdkScrim.classList.remove('on'); }
 
   // ============================ backup / excel / plantilla ==================
   function dl(blob, name) { const url = URL.createObjectURL(blob); const a = h('a', { href: url, download: name }); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
@@ -5608,6 +5631,18 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         if (!label) label = (typeof el.className === 'string' && el.className) ? el.className.split(' ')[0] : 'control';
         Grab.log('clic', label, { cat: categoriaDe(el) });
       } catch (err) { /* la grabación nunca debe romper la UI */ }
+    }, true);
+    // Campos completados en formularios (solo la ETIQUETA, nunca el valor) para ver el patrón de llenado.
+    document.addEventListener('change', e => {
+      if (!Grab.on) return;
+      try {
+        const el = e.target; if (!el || !el.closest || !el.closest('.drawer')) return;
+        if (!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+        if (el.type === 'file') return;
+        const fld = el.closest('.field'); let lbl = fld ? (fld.querySelector('label') || {}).textContent : '';
+        lbl = String(lbl || el.getAttribute('placeholder') || el.getAttribute('title') || 'campo').replace(/\s+/g, ' ').trim();
+        Grab.log('campo', 'Completó: ' + lbl);
+      } catch (err) { /* nunca romper la UI */ }
     }, true);
     // Errores de ejecución: se registran si hay grabación en curso (para revisarlos).
     window.addEventListener('error', ev => { try { Grab.log('error', (ev.message || 'Error') + (ev.filename ? ' @' + String(ev.filename).split('/').pop() + ':' + ev.lineno : '')); } catch (e) {} });

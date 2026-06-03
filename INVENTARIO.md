@@ -141,9 +141,14 @@ las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
 
 ## 8. Grabación de sesión (a demanda)
 - Botón **Grabar/Detener** en la barra. Mientras graba, registra **pantallas, clics,
-  resultados/avisos y errores** de ejecución (no persiste en estado ni en el Sheet).
-  Al **Detener** exporta un `.xlsx` (Resumen + Pasos con Δ de tiempo) para analizar lo
-  realizado y detectar errores.
+  formularios abiertos, campos completados** (solo la *etiqueta*, nunca el valor),
+  **búsquedas (⌘K), resultados/avisos y errores** de ejecución (no persiste en estado
+  ni en el Sheet; no captura datos sensibles).
+- Al **Detener** exporta un `.xlsx` con dos hojas: **Resumen** (duración, conteos,
+  **tiempo por pantalla**, **pausas más largas** —dónde se detuvo—, acciones realizadas,
+  formularios abiertos, búsquedas, pantallas visitadas y errores) y **Pasos** (cada
+  evento con Δ de tiempo, tipo, pantalla, n° inv., categoría y detalle, con autofiltro)
+  para analizar el flujo de trabajo real, medir tiempos y detectar fricción/errores.
 
 ## 9. Invariantes garantizadas (verificadas en Fase 2)
 1. `equipo.estado` siempre **== recalculado** desde sus eventos (determinista).
