@@ -2776,7 +2776,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.7';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.8';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2853,13 +2853,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
   // ============================ ROUTER ======================================
   const NAV = [
-    { id: 'inicio', label: 'Hoy', icon: 'inicio' },
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
-    { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
-    { id: 'asignaciones', label: 'MP del mes', icon: 'asignaciones' },
-    { id: 'tablero', label: 'Tablero', icon: 'tablero' },
-    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
-    { id: 'eventos', label: 'Eventos', icon: 'eventos' }
+    { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' }
   ];
   let view = 'inicio', params = {}, fichaOrigen = 'equipos';
   let kbList = null; // {rows, open, idx} para navegación j/k
@@ -3592,8 +3587,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const eq = H.findEquipo(params.inv);
     if (!eq) return h('div', { class: 'empty' }, 'Equipo no encontrado · ', h('span', { class: 'link', onclick: () => go('equipos') }, 'volver'));
     // Normaliza nombres de pestaña antiguos al nuevo esquema de 3 pestañas.
-    const TAB_MAP = { resumen: 'historial', bitacora: 'historial', ciclos: 'historial', pendientes: 'historial', conflictos: 'historial', auditoria: 'historial', matriz: 'mantencion', mantencion: 'mantencion', historial: 'historial', archivos: 'archivos' };
-    const tab = TAB_MAP[params.tab] || 'historial';
+    const TAB_MAP = { resumen: 'seguimiento', historial: 'seguimiento', seguimiento: 'seguimiento', ciclos: 'seguimiento', pendientes: 'seguimiento', conflictos: 'seguimiento', auditoria: 'seguimiento', bitacora: 'bitacora', matriz: 'mantencion', mantencion: 'mantencion', archivos: 'archivos' };
+    const tab = TAB_MAP[params.tab] || 'seguimiento';
     const confs = H.conflictosDe(eq.inv);
     const pends = H.pendientesDe(eq.inv).filter(p => p.estado !== 'cerrado');
     const dias = H.diasEnEstado(eq);
@@ -3622,14 +3617,15 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
-    const tabsDef = [['mantencion', 'Mantención'], ['historial', 'Historial', pends.length], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
+    const tabsDef = [['mantencion', 'Mantención'], ['seguimiento', 'Seguimiento', pends.length], ['bitacora', 'Bitácora'], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
     const tabs = h('div', { class: 'tabs' }, ...tabsDef.map(([id, lbl, n]) =>
       h('button', { class: tab === id ? 'on' : '', onclick: () => go('equipo', { inv: eq.inv, tab: id }) }, lbl, n ? h('span', { class: 'badge-count' }, n) : null)));
 
     const body = h('div', {});
     if (tab === 'mantencion') mount(body, tabMatriz(eq));
     else if (tab === 'archivos') mount(body, tabArchivos(eq));
-    else mount(body, tabHistorial(eq));
+    else if (tab === 'bitacora') mount(body, eventoTimeline(eq));
+    else mount(body, tabSeguimiento(eq));
 
     // "Siguiente paso": qué hacer aquí, según el estado del equipo (responde "no sé qué hacer").
     let pTit, pSub, pTono = 'warn', pLbl = null, pFn = null;
@@ -3641,8 +3637,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       pLbl = 'Registrar gestión'; pFn = () => formRegistrarGestion(eq);
     } else if (pends.length) {
       pTit = pends.length + ' pendiente(s) por gestionar';
-      pSub = 'Recuérdalos, delégalos o márcalos resueltos en Historial';
-      pLbl = 'Ver pendientes'; pFn = () => go('equipo', { inv: eq.inv, tab: 'historial' });
+      pSub = 'Recuérdalos, delégalos o márcalos resueltos en Seguimiento';
+      pLbl = 'Ver pendientes'; pFn = () => go('equipo', { inv: eq.inv, tab: 'seguimiento' });
     } else {
       pTono = ''; pTit = 'Operativo y sin pendientes'; pSub = 'Nada urgente. Si hiciste la mantención del mes, regístrala con "Nuevo evento".';
     }
@@ -3680,7 +3676,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           h('div', { class: 'm-txt' }, s.texto || '—'))))));
   }
   // === Pestaña HISTORIAL: ciclo correctivo + pendientes + bitácora (línea de tiempo) ===
-  function tabHistorial(eq) {
+  function tabSeguimiento(eq) {
     const out = h('div', {});
     const ciclosAb = H.ciclosAbiertosDe(eq.inv);
     // 1) Ciclo correctivo abierto, con etapa actual y siguiente paso (pipeline).
@@ -3711,7 +3707,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       return h('div', { class: 'section' }, h('div', { class: 's-hd' }, h('h3', {}, 'Pendientes'), h('span', { class: 's-sub' }, `${nAct} activo(s) · ${nRes} resuelto(s)`), h('div', { class: 'tb-spacer' }), seg,
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo')), pbody);
     })();
-    mount(out, ciclosCard, gestionesPanel(eq), pendSection, eventoTimeline(eq));
+    mount(out, ciclosCard, gestionesPanel(eq), pendSection);
     return out;
   }
   // Bitácora como línea de tiempo legible (fecha · tipo · resultado/estado · ejecutor · 📎 · pendientes; clic = editar).
@@ -3804,23 +3800,23 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('div', { class: 'section' },
         h('div', { class: 's-hd' }, h('h3', {}, 'Matriz de mantención preventiva'), h('div', { class: 'tb-spacer' }), field(null, yearSel)),
         h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
-          h('thead', {}, h('tr', {}, h('th', {}, ''), ...MESES.map(m => h('th', { class: 'num' }, m)))),
-          h('tbody', {},
-            h('tr', {}, h('td', { class: 'muted' }, 'Programado (P)'), ...MESES.map(m => { const p = (eq.prog || {})[m]; return h('td', { class: 'num mpcell ' + (p ? 'x' : '') }, p || '·'); })),
-            h('tr', {}, h('td', { class: 'muted' }, 'Resultado (R)'), ...MESES.map((m, i) => {
-              const r = H.resultadoMPMes(eq, yr, i);
-              const ev = H.eventoMPMes(eq.inv, yr, i);
-              const tieneObs = ev && (ev.obs || '').trim();
-              const tip = ev ? (`${m} ${yr} · ${ev.resultado || 'Si'} · ${ev.ejecutor || 'sin ejecutor'}` + (tieneObs ? `\nObs: ${ev.obs}` : '')) : (r ? `${m}: ${r}` : `${m}: sin registro`);
-              return h('td', { class: 'num mpcell ' + mpResultClass(r), title: tip, onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·', tieneObs ? h('sup', { style: { color: 'var(--accent)' } }, '✎') : null);
-            })),
-            h('tr', {}, h('td', { class: 'muted' }, 'Responsable'), ...MESES.map((mm, i) => {
-              const km = `${yr}-${String(i + 1).padStart(2, '0')}`;
-              const asig = (S.asignacionesMP || {})[km] || {};
-              return h('td', { class: 'num', style: { padding: '3px' } }, selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], asig[eq.inv] || '',
-                { class: 'mp-resp', title: `Responsable de MP · ${mm} ${yr}`, onchange: ev => { const st = H.getState(); st.asignacionesMP = st.asignacionesMP || {}; st.asignacionesMP[km] = st.asignacionesMP[km] || {}; if (ev.target.value) st.asignacionesMP[km][eq.inv] = ev.target.value; else delete st.asignacionesMP[km][eq.inv]; H.save(); } }));
-            }))
-        )))),
+          h('thead', {}, h('tr', {}, h('th', {}, 'Mes'), h('th', {}, 'Programado (P)'), h('th', {}, 'Resultado (R)'), h('th', {}, 'Responsable'))),
+          h('tbody', {}, ...MESES.map((m, i) => {
+            const p = (eq.prog || {})[m];
+            const r = H.resultadoMPMes(eq, yr, i);
+            const ev = H.eventoMPMes(eq.inv, yr, i);
+            const tieneObs = ev && (ev.obs || '').trim();
+            const tip = ev ? (`${m} ${yr} · ${ev.resultado || 'Si'} · ${ev.ejecutor || 'sin ejecutor'}` + (tieneObs ? `\nObs: ${ev.obs}` : '')) : (r ? `${m}: ${r}` : `${m}: sin registro`);
+            const km = `${yr}-${String(i + 1).padStart(2, '0')}`;
+            const asig = (S.asignacionesMP || {})[km] || {};
+            return h('tr', {},
+              h('td', { style: { fontWeight: 600 } }, MES_ESP(i)),
+              h('td', { class: 'mpcell ' + (p ? 'x' : '') }, p || '·'),
+              h('td', { class: 'mpcell ' + mpResultClass(r), title: tip, style: { cursor: 'pointer' }, onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·', tieneObs ? h('sup', { style: { color: 'var(--accent)' } }, '✎') : null),
+              h('td', { style: { padding: '3px 6px' } }, selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], asig[eq.inv] || '',
+                { class: 'mp-resp', style: { width: '100%', maxWidth: '260px' }, title: `Responsable de MP · ${m} ${yr}`, onchange: ev2 => { const st = H.getState(); st.asignacionesMP = st.asignacionesMP || {}; st.asignacionesMP[km] = st.asignacionesMP[km] || {}; if (ev2.target.value) st.asignacionesMP[km][eq.inv] = ev2.target.value; else delete st.asignacionesMP[km][eq.inv]; H.save(); } })));
+          }))
+        ))),
         h('div', { class: 's-bd' }, h('div', { class: 'faint', style: { fontSize: '11.5px' } }, 'Click en una celda de Resultado para registrar/editar la MP de ese mes (✎ = tiene observación). En la fila Responsable eliges quién hace la MP de cada mes. Códigos: Si=hecha · C1–C8=reprogramación · FS/NU/No=falla · Baja.'))),
       h('div', { class: 'section' },
         h('div', { class: 's-hd' }, h('h3', {}, `Observaciones de MP · ${yr}`), h('span', { class: 's-sub' }, obsList.length + ' con nota')),
@@ -5495,6 +5491,11 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // Menú "Más": el resto de vistas (no están al frente; se abren bajo demanda).
   function masMenu(anchor) {
     popover(anchor, [
+      ['Inicio', () => go('inicio')],
+      ['MP del mes', () => go('asignaciones')],
+      ['Tablero', () => go('tablero')],
+      ['Cumplimiento', () => go('cumplimiento')],
+      ['Eventos / bitácora', () => go('eventos')],
       ['Tiempos de resolución', () => go('tiempos')],
       ['Recordatorios y escalamiento', () => go('recordatorios')],
       ['Conflictos con el maestro', () => go('conflictos')],
