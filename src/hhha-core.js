@@ -451,6 +451,49 @@
     });
     return best;
   }
+
+  // Análisis de TIEMPOS DE RESOLUCIÓN (días apertura→cierre) y ENVEJECIMIENTO de lo
+  // abierto, para pendientes y ciclos correctivos. Solo lectura; no muta estado.
+  function analisisTiempos() {
+    const hoy = hoyLocal();
+    const dd = (a, b) => (a && b) ? diasEntreFechas(a, b) : null;
+    const prom = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 10) / 10 : null;
+    const buckets = arr => { const b = { d7: 0, d14: 0, d30: 0, d30p: 0 }; arr.forEach(d => { if (d <= 7) b.d7++; else if (d <= 14) b.d14++; else if (d <= 30) b.d30++; else b.d30p++; }); return b; };
+
+    const pend = (state.pendientes || []).filter(p => !p.anulado);
+    const pCerr = [], pAbi = [], porEjec = {}, porTipo = {};
+    pend.forEach(p => {
+      const ek = p.ejecutor || '— sin asignar';
+      const e = porEjec[ek] || (porEjec[ek] = { ejecutor: ek, abiertos: 0, cerrados: 0, _sumC: 0, _sumE: 0 });
+      const tk = p.tipo || '—';
+      const t = porTipo[tk] || (porTipo[tk] = { tipo: tk, n: 0, _sum: 0 });
+      if (p.estado === 'cerrado' && p.fechaCierre && p.fechaCrea) {
+        const d = dd(p.fechaCrea, p.fechaCierre);
+        if (d != null && d >= 0) { pCerr.push(d); e.cerrados++; e._sumC += d; t.n++; t._sum += d; }
+      } else if (p.estado !== 'cerrado' && p.fechaCrea) {
+        const d = dd(p.fechaCrea, hoy);
+        if (d != null && d >= 0) { pAbi.push({ id: p.id, inv: p.inv, tipo: p.tipo, ejecutor: p.ejecutor || null, dias: d }); e.abiertos++; e._sumE += d; }
+      }
+    });
+    const cic = (state.ciclos || []).filter(c => c.estado !== 'anulado' && !c.anulado);
+    const cCerr = [], cAbi = [];
+    cic.forEach(c => {
+      if (c.estado === 'cerrado' && c.fechaApertura && c.fechaCierre) {
+        const d = dd(c.fechaApertura, c.fechaCierre); if (d != null && d >= 0) cCerr.push(d);
+      } else if (c.estado === 'abierto' && c.fechaApertura) {
+        const d = dd(c.fechaApertura, hoy); if (d != null && d >= 0) cAbi.push({ id: c.id, inv: c.inv, folio: c.folio || null, dias: d });
+      }
+    });
+    const ejecLista = Object.keys(porEjec).map(k => { const e = porEjec[k]; return { ejecutor: e.ejecutor, abiertos: e.abiertos, cerrados: e.cerrados, promCierre: e.cerrados ? Math.round(e._sumC / e.cerrados * 10) / 10 : null, edadProm: e.abiertos ? Math.round(e._sumE / e.abiertos * 10) / 10 : null }; })
+      .sort((a, b) => (b.abiertos - a.abiertos) || (b.cerrados - a.cerrados));
+    const tipoLista = Object.keys(porTipo).map(k => porTipo[k]).filter(t => t.n).map(t => ({ tipo: t.tipo, n: t.n, prom: Math.round(t._sum / t.n * 10) / 10 })).sort((a, b) => b.prom - a.prom);
+    return {
+      pend: { cerrados: pCerr.length, abiertos: pAbi.length, promCierre: prom(pCerr), aging: buckets(pAbi.map(x => x.dias)), abiertosList: pAbi.sort((a, b) => b.dias - a.dias) },
+      ciclos: { cerrados: cCerr.length, abiertos: cAbi.length, promCierre: prom(cCerr), aging: buckets(cAbi.map(x => x.dias)), abiertosList: cAbi.sort((a, b) => b.dias - a.dias) },
+      porEjecutor: ejecLista, porTipo: tipoLista
+    };
+  }
+
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
     if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
@@ -2034,7 +2077,7 @@
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion, analisisTiempos,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,

@@ -149,7 +149,7 @@
   // Registra, SOLO mientras está activa, las pantallas visitadas, los clics, los
   // resultados (avisos) y los errores. Al detener, exporta un archivo analizable.
   // No persiste nada en el estado ni en el Sheet: es un registro puntual y local.
-  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', contactos: 'Contactos', configuracion: 'Configuración' };
+  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', tiempos: 'Tiempos de resolución', contactos: 'Contactos', configuracion: 'Configuración' };
   const Grab = {
     on: false, ini: null, pasos: [], _timer: null,
     log(tipo, accion, extra) {
@@ -1424,6 +1424,50 @@
   }
 
   // ---- CUMPLIMIENTO POR SERVICIO -----------------------------------------
+  // ---- TIEMPOS DE RESOLUCIÓN (analítica de cuánto tardan las gestiones) -----
+  VIEWS.tiempos = function () {
+    const a = H.analisisTiempos();
+    const root = h('div', { class: 'view-narrow' });
+    const dlab = v => v == null ? '—' : (v + ' d');
+    root.appendChild(h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '3px' } },
+      h('h2', { style: { margin: 0, fontSize: '15px', fontWeight: 800, letterSpacing: '-.2px' } }, 'Tiempos de resolución')));
+    root.appendChild(h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '12px' } },
+      'Cuánto se tarda en cerrar pendientes y ciclos correctivos (creación → cierre) y cuánto llevan abiertos los que siguen pendientes.'));
+    const kpi = (lbl, val, sub) => h('div', { class: 'kpi', style: { cursor: 'default' } },
+      h('div', { class: 'k-lbl' }, lbl), h('div', { class: 'k-val' }, String(val)), sub ? h('div', { class: 'k-sub' }, sub) : null);
+    root.appendChild(h('div', { class: 'kpi-row' },
+      kpi('Pendientes · días prom. de cierre', dlab(a.pend.promCierre), a.pend.cerrados + ' cerrado(s) medido(s)'),
+      kpi('Ciclos · días prom. de cierre', dlab(a.ciclos.promCierre), a.ciclos.cerrados + ' cerrado(s)'),
+      kpi('Pendientes abiertos', a.pend.abiertos, a.pend.aging.d30p + ' con +30 días'),
+      kpi('Ciclos abiertos', a.ciclos.abiertos, a.ciclos.aging.d30p + ' con +30 días')));
+    const COLS = [['≤7 d', 'd7', 'var(--op)'], ['8–14 d', 'd14', '#c79a2e'], ['15–30 d', 'd30', 'var(--st)'], ['+30 d', 'd30p', 'var(--noop)']];
+    const aging = (titulo, ag, total) => h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, titulo), h('span', { class: 's-sub' }, total + ' abierto(s)')),
+      h('div', { class: 's-bd' },
+        total ? h('div', { class: 'agebar' }, ...COLS.filter(c => ag[c[1]] > 0).map(([lbl, k, col]) => h('div', { style: { width: (ag[k] / total * 100) + '%', background: col }, title: lbl + ': ' + ag[k] }))) : h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Nada abierto.'),
+        h('div', { style: { marginTop: '8px' } }, ...COLS.map(([lbl, k, col]) => h('span', { class: 'k-sub', style: { marginRight: '13px' } },
+          h('span', { style: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px', background: col, marginRight: '4px', verticalAlign: 'baseline' } }), lbl + ': ', h('b', {}, ag[k]))))));
+    root.appendChild(aging('Envejecimiento de pendientes abiertos', a.pend.aging, a.pend.abiertos));
+    root.appendChild(aging('Envejecimiento de ciclos abiertos', a.ciclos.aging, a.ciclos.abiertos));
+    const numTd = v => h('td', { class: 'num', style: { textAlign: 'right' } }, v);
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Por responsable'), h('span', { class: 's-sub' }, 'clic para ver sus pendientes')),
+      h('div', { class: 's-bd flush' }, a.porEjecutor.length
+        ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, ['Responsable', 'Abiertos', 'Edad prom.', 'Cerrados', 'Días prom. cierre'].map((c, i) => h('th', { style: i ? { textAlign: 'right' } : null }, c)))),
+          h('tbody', {}, ...a.porEjecutor.map(e => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('pendientes', { ejec: e.ejecutor === '— sin asignar' ? '__none' : e.ejecutor }) },
+            h('td', {}, e.ejecutor),
+            numTd(e.abiertos || '—'), numTd(e.edadProm == null ? '—' : e.edadProm + ' d'),
+            numTd(e.cerrados || '—'), numTd(e.promCierre == null ? '—' : e.promCierre + ' d'))))))
+        : h('div', { class: 'faint', style: { fontSize: '12px', padding: '4px 2px' } }, 'Sin datos.'))));
+    if (a.porTipo.length) root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Por tipo de pendiente'), h('span', { class: 's-sub' }, 'sobre los cerrados')),
+      h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, ['Tipo', 'Cerrados', 'Días prom. cierre'].map((c, i) => h('th', { style: i ? { textAlign: 'right' } : null }, c)))),
+        h('tbody', {}, ...a.porTipo.map(t => h('tr', {}, h('td', {}, TIPO_PENDIENTE[t.tipo] || t.tipo), numTd(t.n), numTd(t.prom + ' d')))))))));
+    return root;
+  };
+
   VIEWS.cumplimiento = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
@@ -1947,7 +1991,7 @@
     const actions = [
       ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
       ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
-      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Tiempos de resolución', ir('tiempos'), '⏱'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
       [Grab.on ? 'Detener grabación y exportar' : 'Iniciar grabación', () => { closeCmdk(); Grab.toggle(); }, '⏺'],
@@ -2528,6 +2572,7 @@
       ['Eventos / bitácora', () => go('eventos')],
       ['MP del mes', () => go('asignaciones')],
       ['Cumplimiento', () => go('cumplimiento')],
+      ['Tiempos de resolución', () => go('tiempos')],
       ['Conflictos con el maestro', () => go('conflictos')],
       ['Contactos', () => go('contactos')],
       ['Exportar Excel', () => excelExport()],

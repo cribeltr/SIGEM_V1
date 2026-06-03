@@ -298,6 +298,8 @@ table.dense thead th:hover .funnel { opacity: .55; }
 .kpi .k-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .progress { height: 7px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
 .progress > i { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width .2s; }
+.agebar { display: flex; height: 13px; border-radius: 6px; overflow: hidden; background: var(--surface-3); }
+.agebar > div { height: 100%; }
 .trend { display: flex; gap: 6px; align-items: flex-end; }
 .trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
 .trend-col.on .trend-lbl { color: var(--accent); font-weight: 800; }
@@ -1046,6 +1048,49 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     });
     return best;
   }
+
+  // Análisis de TIEMPOS DE RESOLUCIÓN (días apertura→cierre) y ENVEJECIMIENTO de lo
+  // abierto, para pendientes y ciclos correctivos. Solo lectura; no muta estado.
+  function analisisTiempos() {
+    const hoy = hoyLocal();
+    const dd = (a, b) => (a && b) ? diasEntreFechas(a, b) : null;
+    const prom = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 10) / 10 : null;
+    const buckets = arr => { const b = { d7: 0, d14: 0, d30: 0, d30p: 0 }; arr.forEach(d => { if (d <= 7) b.d7++; else if (d <= 14) b.d14++; else if (d <= 30) b.d30++; else b.d30p++; }); return b; };
+
+    const pend = (state.pendientes || []).filter(p => !p.anulado);
+    const pCerr = [], pAbi = [], porEjec = {}, porTipo = {};
+    pend.forEach(p => {
+      const ek = p.ejecutor || '— sin asignar';
+      const e = porEjec[ek] || (porEjec[ek] = { ejecutor: ek, abiertos: 0, cerrados: 0, _sumC: 0, _sumE: 0 });
+      const tk = p.tipo || '—';
+      const t = porTipo[tk] || (porTipo[tk] = { tipo: tk, n: 0, _sum: 0 });
+      if (p.estado === 'cerrado' && p.fechaCierre && p.fechaCrea) {
+        const d = dd(p.fechaCrea, p.fechaCierre);
+        if (d != null && d >= 0) { pCerr.push(d); e.cerrados++; e._sumC += d; t.n++; t._sum += d; }
+      } else if (p.estado !== 'cerrado' && p.fechaCrea) {
+        const d = dd(p.fechaCrea, hoy);
+        if (d != null && d >= 0) { pAbi.push({ id: p.id, inv: p.inv, tipo: p.tipo, ejecutor: p.ejecutor || null, dias: d }); e.abiertos++; e._sumE += d; }
+      }
+    });
+    const cic = (state.ciclos || []).filter(c => c.estado !== 'anulado' && !c.anulado);
+    const cCerr = [], cAbi = [];
+    cic.forEach(c => {
+      if (c.estado === 'cerrado' && c.fechaApertura && c.fechaCierre) {
+        const d = dd(c.fechaApertura, c.fechaCierre); if (d != null && d >= 0) cCerr.push(d);
+      } else if (c.estado === 'abierto' && c.fechaApertura) {
+        const d = dd(c.fechaApertura, hoy); if (d != null && d >= 0) cAbi.push({ id: c.id, inv: c.inv, folio: c.folio || null, dias: d });
+      }
+    });
+    const ejecLista = Object.keys(porEjec).map(k => { const e = porEjec[k]; return { ejecutor: e.ejecutor, abiertos: e.abiertos, cerrados: e.cerrados, promCierre: e.cerrados ? Math.round(e._sumC / e.cerrados * 10) / 10 : null, edadProm: e.abiertos ? Math.round(e._sumE / e.abiertos * 10) / 10 : null }; })
+      .sort((a, b) => (b.abiertos - a.abiertos) || (b.cerrados - a.cerrados));
+    const tipoLista = Object.keys(porTipo).map(k => porTipo[k]).filter(t => t.n).map(t => ({ tipo: t.tipo, n: t.n, prom: Math.round(t._sum / t.n * 10) / 10 })).sort((a, b) => b.prom - a.prom);
+    return {
+      pend: { cerrados: pCerr.length, abiertos: pAbi.length, promCierre: prom(pCerr), aging: buckets(pAbi.map(x => x.dias)), abiertosList: pAbi.sort((a, b) => b.dias - a.dias) },
+      ciclos: { cerrados: cCerr.length, abiertos: cAbi.length, promCierre: prom(cCerr), aging: buckets(cAbi.map(x => x.dias)), abiertosList: cAbi.sort((a, b) => b.dias - a.dias) },
+      porEjecutor: ejecLista, porTipo: tipoLista
+    };
+  }
+
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
     if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
@@ -2629,7 +2674,7 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion, analisisTiempos,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
@@ -2821,7 +2866,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   // Registra, SOLO mientras está activa, las pantallas visitadas, los clics, los
   // resultados (avisos) y los errores. Al detener, exporta un archivo analizable.
   // No persiste nada en el estado ni en el Sheet: es un registro puntual y local.
-  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', contactos: 'Contactos', configuracion: 'Configuración' };
+  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', tiempos: 'Tiempos de resolución', contactos: 'Contactos', configuracion: 'Configuración' };
   const Grab = {
     on: false, ini: null, pasos: [], _timer: null,
     log(tipo, accion, extra) {
@@ -4096,6 +4141,50 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
 
   // ---- CUMPLIMIENTO POR SERVICIO -----------------------------------------
+  // ---- TIEMPOS DE RESOLUCIÓN (analítica de cuánto tardan las gestiones) -----
+  VIEWS.tiempos = function () {
+    const a = H.analisisTiempos();
+    const root = h('div', { class: 'view-narrow' });
+    const dlab = v => v == null ? '—' : (v + ' d');
+    root.appendChild(h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '3px' } },
+      h('h2', { style: { margin: 0, fontSize: '15px', fontWeight: 800, letterSpacing: '-.2px' } }, 'Tiempos de resolución')));
+    root.appendChild(h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '12px' } },
+      'Cuánto se tarda en cerrar pendientes y ciclos correctivos (creación → cierre) y cuánto llevan abiertos los que siguen pendientes.'));
+    const kpi = (lbl, val, sub) => h('div', { class: 'kpi', style: { cursor: 'default' } },
+      h('div', { class: 'k-lbl' }, lbl), h('div', { class: 'k-val' }, String(val)), sub ? h('div', { class: 'k-sub' }, sub) : null);
+    root.appendChild(h('div', { class: 'kpi-row' },
+      kpi('Pendientes · días prom. de cierre', dlab(a.pend.promCierre), a.pend.cerrados + ' cerrado(s) medido(s)'),
+      kpi('Ciclos · días prom. de cierre', dlab(a.ciclos.promCierre), a.ciclos.cerrados + ' cerrado(s)'),
+      kpi('Pendientes abiertos', a.pend.abiertos, a.pend.aging.d30p + ' con +30 días'),
+      kpi('Ciclos abiertos', a.ciclos.abiertos, a.ciclos.aging.d30p + ' con +30 días')));
+    const COLS = [['≤7 d', 'd7', 'var(--op)'], ['8–14 d', 'd14', '#c79a2e'], ['15–30 d', 'd30', 'var(--st)'], ['+30 d', 'd30p', 'var(--noop)']];
+    const aging = (titulo, ag, total) => h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, titulo), h('span', { class: 's-sub' }, total + ' abierto(s)')),
+      h('div', { class: 's-bd' },
+        total ? h('div', { class: 'agebar' }, ...COLS.filter(c => ag[c[1]] > 0).map(([lbl, k, col]) => h('div', { style: { width: (ag[k] / total * 100) + '%', background: col }, title: lbl + ': ' + ag[k] }))) : h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Nada abierto.'),
+        h('div', { style: { marginTop: '8px' } }, ...COLS.map(([lbl, k, col]) => h('span', { class: 'k-sub', style: { marginRight: '13px' } },
+          h('span', { style: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px', background: col, marginRight: '4px', verticalAlign: 'baseline' } }), lbl + ': ', h('b', {}, ag[k]))))));
+    root.appendChild(aging('Envejecimiento de pendientes abiertos', a.pend.aging, a.pend.abiertos));
+    root.appendChild(aging('Envejecimiento de ciclos abiertos', a.ciclos.aging, a.ciclos.abiertos));
+    const numTd = v => h('td', { class: 'num', style: { textAlign: 'right' } }, v);
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Por responsable'), h('span', { class: 's-sub' }, 'clic para ver sus pendientes')),
+      h('div', { class: 's-bd flush' }, a.porEjecutor.length
+        ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+          h('thead', {}, h('tr', {}, ['Responsable', 'Abiertos', 'Edad prom.', 'Cerrados', 'Días prom. cierre'].map((c, i) => h('th', { style: i ? { textAlign: 'right' } : null }, c)))),
+          h('tbody', {}, ...a.porEjecutor.map(e => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('pendientes', { ejec: e.ejecutor === '— sin asignar' ? '__none' : e.ejecutor }) },
+            h('td', {}, e.ejecutor),
+            numTd(e.abiertos || '—'), numTd(e.edadProm == null ? '—' : e.edadProm + ' d'),
+            numTd(e.cerrados || '—'), numTd(e.promCierre == null ? '—' : e.promCierre + ' d'))))))
+        : h('div', { class: 'faint', style: { fontSize: '12px', padding: '4px 2px' } }, 'Sin datos.'))));
+    if (a.porTipo.length) root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Por tipo de pendiente'), h('span', { class: 's-sub' }, 'sobre los cerrados')),
+      h('div', { class: 's-bd flush' }, h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, ['Tipo', 'Cerrados', 'Días prom. cierre'].map((c, i) => h('th', { style: i ? { textAlign: 'right' } : null }, c)))),
+        h('tbody', {}, ...a.porTipo.map(t => h('tr', {}, h('td', {}, TIPO_PENDIENTE[t.tipo] || t.tipo), numTd(t.n), numTd(t.prom + ' d')))))))));
+    return root;
+  };
+
   VIEWS.cumplimiento = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
@@ -4619,7 +4708,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const actions = [
       ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
       ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
-      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Tiempos de resolución', ir('tiempos'), '⏱'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
       [Grab.on ? 'Detener grabación y exportar' : 'Iniciar grabación', () => { closeCmdk(); Grab.toggle(); }, '⏺'],
@@ -5200,6 +5289,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       ['Eventos / bitácora', () => go('eventos')],
       ['MP del mes', () => go('asignaciones')],
       ['Cumplimiento', () => go('cumplimiento')],
+      ['Tiempos de resolución', () => go('tiempos')],
       ['Conflictos con el maestro', () => go('conflictos')],
       ['Contactos', () => go('contactos')],
       ['Exportar Excel', () => excelExport()],
