@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.7';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.8';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -136,10 +136,11 @@
   const NAV = [
     { id: 'inicio', label: 'Hoy', icon: 'inicio' },
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
-    { id: 'tablero', label: 'Tablero', icon: 'tablero' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' },
-    { id: 'eventos', label: 'Eventos', icon: 'eventos' },
-    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' }
+    { id: 'asignaciones', label: 'MP del mes', icon: 'asignaciones' },
+    { id: 'tablero', label: 'Tablero', icon: 'tablero' },
+    { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
+    { id: 'eventos', label: 'Eventos', icon: 'eventos' }
   ];
   let view = 'inicio', params = {};
   let kbList = null; // {rows, open, idx} para navegación j/k
@@ -2698,22 +2699,16 @@
   // Menú "Más": el resto de vistas (no están al frente; se abren bajo demanda).
   function masMenu(anchor) {
     popover(anchor, [
-      ['Panel de control', () => go('panel')],
-      ['Equipos', () => go('equipos')],
-      ['Tablero', () => go('tablero')],
-      ['Pendientes', () => go('pendientes')],
-      ['Eventos / bitácora', () => go('eventos')],
-      ['MP del mes', () => go('asignaciones')],
-      ['Cumplimiento', () => go('cumplimiento')],
       ['Tiempos de resolución', () => go('tiempos')],
       ['Recordatorios y escalamiento', () => go('recordatorios')],
       ['Conflictos con el maestro', () => go('conflictos')],
       ['Contactos', () => go('contactos')],
+      ['Panel de control', () => go('panel')],
       ['Exportar Excel', () => excelExport()],
       ['Configuración', () => go('configuracion')]
     ]);
   }
-  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos') || (view === 'asignaciones' && id === 'cumplimiento')); }
+  function syncNav() { for (const id in navItems) navItems[id].classList.toggle('active', id === view || (view === 'equipo' && id === 'equipos') || (view === 'ciclos' && id === 'eventos')); }
   function refreshChrome() {
     const S = H.getState();
     const counts = {
@@ -2778,7 +2773,9 @@
         h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
         h('span', { class: 'u-avatar', title: 'Cristian · ' + APP_VERSION }, 'C'),
         h('span', { id: 'tb-title', style: { display: 'none' } })),
+      h('div', { class: 'navbar' }, railNav),
       h('main', { class: 'view', id: 'view' }));
+    buildRail();
     mount(document.getElementById('root'), app);
 
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
