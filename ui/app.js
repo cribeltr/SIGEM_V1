@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.4';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.5';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -738,6 +738,8 @@
         let va, vb;
         if (sortKey === 'mp') { va = H.mpEstadoMes(a, YEAR, MONTH); vb = H.mpEstadoMes(b, YEAR, MONTH); }
         else if (sortKey === 'resultado') { va = H.resultadoMPMes(a, YEAR, MONTH) || ''; vb = H.resultadoMPMes(b, YEAR, MONTH) || ''; }
+        else if (sortKey === 'dias') { va = H.diasEnEstado(a); vb = H.diasEnEstado(b); }
+        else if (sortKey === 'ultima') { va = (H.ultimaGestion(a.inv) || {}).fecha || ''; vb = (H.ultimaGestion(b.inv) || {}).fecha || ''; }
         else if (sortKey === 'pend') { va = H.pendientesDe(a.inv).filter(p => p.estado !== 'cerrado').length; vb = H.pendientesDe(b.inv).filter(p => p.estado !== 'cerrado').length; }
         else { va = (a[sortKey] || ''); vb = (b[sortKey] || ''); }
         return (typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'es', { numeric: true })) * sortDir;
@@ -747,6 +749,7 @@
     function render() {
       const list = data();
       if (vmode === 'mes') return renderMes(list);
+      const down = (f.estado === 'no_operativo' || f.estado === 'en_servicio_tecnico');   // vista caídos
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
       const th = (key, lbl, cls, getter) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
         h('span', { class: 'th-lbl' }, lbl), sortKey === key ? h('span', { class: 'arr' }, sortDir > 0 ? '↑' : '↓') : null, getter ? cf.btn(key, lbl, getter) : null);
@@ -757,7 +760,10 @@
           th('id', 'ID', 'num', e => String(e.id)),
           th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('serie', 'Serie', '', e => e.serie),
           th('servicio', 'Servicio', '', e => e.servicio), th('unidad', 'Unidad', '', e => e.unidad), th('ubic', 'Ubicación', '', e => e.ubic),
-          th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado), th('freq', 'Freq', '', e => e.freq),
+          th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado),
+          ...(down
+            ? [th('dias', 'Tiempo en estado', 'num', e => String(H.diasEnEstado(e))), th('ultima', 'Última actualización', '', e => { const g = H.ultimaGestion(e.inv); return g ? fmtFecha(g.fecha) : 'sin gestión'; })]
+            : [th('freq', 'Freq', '', e => e.freq)]),
           th('pend', 'Pend.', 'num', e => String(H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length)))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
@@ -766,7 +772,11 @@
             h('td', { class: 'num muted' }, e.id),
             h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
             h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
-            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', {}, estadoPill(e.estado)),
+            ...(down
+              ? [h('td', { class: 'num' }, h('span', { class: H.diasEnEstado(e) > 30 ? 'pill st' : '' }, H.diasEnEstado(e) + ' d')),
+                 h('td', { class: 'muted' }, (() => { const g = H.ultimaGestion(e.inv); return g ? h('span', {}, fmtFecha(g.fecha), h('span', { class: 'faint' }, ' · hace ' + H.diasEntreFechas(g.fecha, H.hoyLocal()) + 'd')) : h('span', { class: 'faint' }, 'sin gestión'); })())]
+              : [h('td', { class: 'muted' }, e.freq || '—')]),
             h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
           return tr;
         }))
