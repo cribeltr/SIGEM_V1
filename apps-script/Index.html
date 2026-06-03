@@ -2774,7 +2774,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.3';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.4';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -4911,7 +4911,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     sheets.push({
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
-        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos · Contactos.'],
+        ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos · Asignaciones MP · Contactos.'],
         ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
         ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
@@ -4983,6 +4983,26 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     });
     sheets.push({ name: 'Equipos en servicio técnico', hidden: false, rows: [colsEstado, ...filasEstado('en_servicio_tecnico')] });
     sheets.push({ name: 'Equipos no operativos', hidden: false, rows: [colsEstado, ...filasEstado('no_operativo')] });
+
+    // ASIGNACIONES MP — responsable por equipo y mes (refleja las plantillas subidas).
+    // Acumula TODOS los meses cargados; se regenera en cada sincronización.
+    const asgAll = S.asignacionesMP || {};
+    const asgRows = [];
+    Object.keys(asgAll).sort().forEach(km => {
+      const parts = String(km).split('-'); const y = parts[0]; const mi = (+parts[1]) - 1;
+      const mesNom = MESES[mi] || km; const asg = asgAll[km] || {};
+      Object.keys(asg).forEach(inv => {
+        const resp = asg[inv]; if (!resp) return;
+        const e = H.findEquipo(inv) || {};
+        asgRows.push([km, mesNom + ' ' + y, e.carpeta || '', inv, e.equipo || '', e.servicio || '', e.unidad || '', e.marca || '', e.modelo || '', e.freq || '', (e.prog || {})[mesNom] || '', resp]);
+      });
+    });
+    sheets.push({
+      name: 'Asignaciones MP', hidden: false, rows: [
+        ['Mes', 'Período', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Marca', 'Modelo', 'Frecuencia MP', 'Programado', 'Responsable'],
+        ...asgRows
+      ]
+    });
 
     // CONTACTOS del servicio (vinculados al servicio clínico)
     sheets.push({
