@@ -1498,6 +1498,19 @@
       });
       if (pendsAuto.length > 0) revertidos.push(`${pendsAuto.length} pendiente(s) automático(s) anulado(s)`);
     }
+    // 6. Baja anulada: reabrir los ciclos que esa baja había cerrado. Solo si el equipo,
+    //    ya recalculado, no quedó operativo ni en baja (no se admite ciclo abierto ahí).
+    if (eq && ev.tipo === 'Mantención preventiva' && ev.resultado === 'Baja' &&
+        eq.estado !== 'operativo' && eq.estado !== 'baja') {
+      const reabiertos = state.ciclos.filter(c => c.cerradoPorBaja === ev.id && c.estado === 'cerrado');
+      reabiertos.forEach(c => {
+        c.estado = 'abierto'; c.fechaCierre = null;
+        if (c.motivoCierre === 'Cierre por baja del equipo') c.motivoCierre = null;
+        delete c.cerradoPorBaja;
+        audit('ciclo', c.folio || ('#' + c.id), 'estado', 'cerrado', 'abierto');
+      });
+      if (reabiertos.length) revertidos.push(`${reabiertos.length} ciclo(s) reabierto(s) tras anular la baja`);
+    }
 
     audit('evento', ev.id, 'anulado', false, true);
     save();
@@ -1728,6 +1741,7 @@
     // tener un ciclo en curso).
     state.ciclos.filter(c => c.inv === eq.inv && c.estado === 'abierto').forEach(c => {
       c.estado = 'cerrado'; c.fechaCierre = fecha; c.motivoCierre = 'Cierre por baja del equipo';
+      c.cerradoPorBaja = ev.id;   // etiqueta para poder reabrirlo si se anula esta baja
       audit('ciclo', c.folio || ('#' + c.id), 'estado', 'abierto', 'cerrado');
     });
     // Cerrar pendientes del equipo
