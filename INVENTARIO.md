@@ -87,7 +87,9 @@ las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
   "Recuérdale a X"; "Solicitar/Delegar/Resuelto" y recordatorio en lote por responsable.
 **Equipo**
 - `asignarEncargado`, `agregarNotaEquipo`, **`darDeBaja`** (evento Baja + marca el mes,
-  limpia meses posteriores, **cierra ciclos abiertos**, cierra pendientes).
+  limpia meses posteriores, **cierra ciclos abiertos** —etiquetados con la baja—, cierra
+  pendientes). Al **anular** la baja, `anularEvento` **reabre** esos ciclos (si el equipo
+  no quedó operativo ni en baja).
 **Contactos del servicio**: alta/edición/baja, vinculados a un servicio (o generales).
 
 ## 5. Conciliación con el archivo maestro (Excel)
@@ -113,8 +115,12 @@ las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
   **Tablero** (kanban: por estado / pendientes / correctivos por etapa con
   estancamiento y "siguiente paso"), **Pendientes** (gestión completa con filtros),
   **Eventos/Bitácora**, **MP del mes** (asignación), **Cumplimiento** (por servicio /
-  responsable / mes con tendencia), **Contactos**, **Panel de control** (consola densa
-  de alertas, bajo demanda), **Configuración**.
+  responsable / mes con tendencia), **Tiempos de resolución** (`analisisTiempos`: días de
+  cierre creación→cierre por responsable y tipo + envejecimiento de lo abierto en tramos
+  ≤7/8–14/15–30/+30 días), **Recordatorios y escalamiento** (resumen semanal por
+  responsable con recordar en lote + escalar al Jefe CCRR por correo desde la agenda
+  cuando un pendiente pasa 14 días sin avance), **Contactos**, **Panel de control**
+  (consola densa de alertas, bajo demanda), **Configuración**.
 - Barra superior minimalista: marca + **búsqueda global (⌘K)** + **Grabar** + menú
   "Más" + tema + configuración. Densidad/tema, atajos de teclado, command palette.
 
@@ -128,6 +134,10 @@ las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
 - **Plantilla MP** (descargar/subir) · **Importar maestro** `.xlsx/.xlsm`.
 - **Respaldo JSON** (descargar/importar; oculto cuando hay Sheet conectado).
 - **Importación**: `importarBackup` (migración no destructiva; fusiona telemetría).
+- **Caché local lleno** (`save`): poda conflictos resueltos; si persiste el fallo **con
+  auto-sync al Sheet**, no alarma (la planilla es el respaldo) y sigue guardando; **sin
+  conexión** avisa para descargar respaldo. El recordatorio periódico de backup solo
+  aparece sin Sheet conectado.
 
 ## 8. Grabación de sesión (a demanda)
 - Botón **Grabar/Detener** en la barra. Mientras graba, registra **pantallas, clics,
@@ -142,4 +152,5 @@ las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
 4. MP con causal determinista (C2/C3/FS/NU/Baja) ⇒ `estado` coherente.
 5. Pendiente **cerrado** ⇒ tiene `fechaCierre`; **reabierto** ⇒ se limpia.
 6. **Una sola MP vigente** por equipo y mes tras consolidar.
-7. Anulación **revierte** todos los efectos (R, estado, ciclo, pendientes auto).
+7. Anulación **revierte** todos los efectos (R, estado, ciclo, pendientes auto); anular
+   una **baja** reabre los ciclos que esa baja cerró (salvo que el equipo quede operativo).
