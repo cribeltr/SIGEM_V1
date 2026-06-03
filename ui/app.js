@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.3';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.4';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -704,6 +704,7 @@
     let sortKey = 'inv', sortDir = 1;
     let vmode = 'equipo';   // 'equipo' = 1 fila/equipo · 'mes' = 1 fila por equipo y mes con MP
     const cf = colFilters(render);
+    const cfMes = colFilters(render);   // filtros tipo Excel para el modo "Por mes" (filas equipo×mes)
     const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
     const eqSel = new Set();
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
@@ -757,8 +758,6 @@
           th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('serie', 'Serie', '', e => e.serie),
           th('servicio', 'Servicio', '', e => e.servicio), th('unidad', 'Unidad', '', e => e.unidad), th('ubic', 'Ubicación', '', e => e.ubic),
           th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado), th('freq', 'Freq', '', e => e.freq),
-          th('mp', 'MP', '', mpMesLabel), th('resultado', 'Resultado', '', e => H.resultadoMPMes(e, YEAR, MONTH) || '—'), th('mes', 'Mes', '', e => MES_ESP(MONTH)),
-          h('th', {}, h('span', { class: 'th-lbl' }, 'Encargado'), cf.btn('encargado', 'Encargado', e => H.encargadoDe(e) || 'sin asignar')),
           th('pend', 'Pend.', 'num', e => String(H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length)))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
@@ -768,8 +767,6 @@
             h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
             h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
             h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.freq || '—'),
-            h('td', {}, mpMesBadge(e)), h('td', { class: 'muted' }, H.resultadoMPMes(e, YEAR, MONTH) || '—'), h('td', { class: 'muted' }, MES_ESP(MONTH)),
-            h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, capCell(140, H.encargadoDe(e) || 'sin asignar')),
             h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
           return tr;
         }))
@@ -779,19 +776,31 @@
     }
     // Formato "por mes": una fila por equipo y por cada mes con MP programada (Mes · Tipo · Resultado).
     function renderMes(list) {
-      const rows = [];
+      let rows = [];
       list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) if (H.mpProgramadaEnMes(e, MESES[i])) rows.push({ e, i }); });
+      const ejecutorMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor; const km = `${YEAR}-${String(i + 1).padStart(2, '0')}`; return ((S.asignacionesMP || {})[km] || {})[e.inv] || '—'; };
+      rows = cfMes.apply(rows);   // filtros de columna (embudo Excel) sobre las filas equipo×mes
       const CAP = 500, capped = rows.length > CAP, shown = rows.slice(0, CAP);
       countNote.textContent = `${rows.length} fila(s) · ${new Set(rows.map(r => r.e.inv)).size} equipo(s)` + (capped ? ` · mostrando ${CAP}` : '');
-      const TH = lbl => h('th', {}, h('span', { class: 'th-lbl' }, lbl));
       const resCell = (e, i) => { const r = H.resultadoMPMes(e, YEAR, i); if (!r) return h('span', { class: 'pill st' }, 'Pendiente'); if (r === 'Si') return h('span', { class: 'pill op' }, 'Sí'); if (r === 'Baja') return h('span', { class: 'pill baja' }, 'Baja'); if (r === 'No') return h('span', { class: 'faint' }, 'No'); return h('span', { class: 'pill noop' }, r); };
       mount(tblWrap, h('table', { class: 'dense' },
-        h('thead', {}, h('tr', {}, ['ID', 'N° Inv.', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Freq', 'Mes', 'Tipo', 'Resultado'].map(TH))),
+        h('thead', {}, h('tr', {},
+          cfMes.thF('id', 'ID', r => String(r.e.id), { cls: 'num' }),
+          cfMes.thF('inv', 'N° Inv.', r => r.e.inv),
+          cfMes.thF('equipo', 'Equipo', r => r.e.equipo || '—'),
+          cfMes.thF('serie', 'Serie', r => r.e.serie || '—'),
+          cfMes.thF('servicio', 'Servicio', r => r.e.servicio || '—'),
+          cfMes.thF('unidad', 'Unidad', r => r.e.unidad || '—'),
+          cfMes.thF('ubic', 'Ubicación', r => r.e.ubic || '—'),
+          cfMes.thF('mes', 'Mes', r => MES_ESP(r.i)),
+          cfMes.thF('tipo', 'Tipo', r => (r.e.prog || {})[MESES[r.i]] || '—'),
+          cfMes.thF('resultado', 'Resultado', r => H.resultadoMPMes(r.e, YEAR, r.i) || 'Pendiente'),
+          cfMes.thF('ejecutor', 'Ejecutor', r => ejecutorMes(r.e, r.i)))),
         h('tbody', {}, ...shown.map(({ e, i }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
           h('td', { class: 'num muted' }, e.id), h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(180, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
           h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
-          h('td', { class: 'muted' }, e.freq || '—'), h('td', {}, MES_ESP(i)), h('td', { class: 'mono' }, (e.prog || {})[MESES[i]] || '—'), h('td', {}, resCell(e, i)))),
-          capped ? h('tr', {}, h('td', { colspan: '11', style: { textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' } }, `Mostrando ${CAP} de ${rows.length} filas — filtra por servicio/estado o usa Exportar para verlas todas.`)) : null)));
+          h('td', {}, MES_ESP(i)), h('td', { class: 'mono' }, (e.prog || {})[MESES[i]] || '—'), h('td', {}, resCell(e, i)), h('td', { class: 'muted' }, capCell(140, ejecutorMes(e, i))))),
+          capped ? h('tr', {}, h('td', { colspan: '11', style: { textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' } }, `Mostrando ${CAP} de ${rows.length} filas — filtra con los embudos o usa Exportar para verlas todas.`)) : null)));
       kbList = { rows: shown.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
@@ -829,9 +838,11 @@
   }
   // Export "por mes": una fila por equipo y mes con MP programada (reproduce Eventos_MP).
   function exportarEquiposMes(list) {
-    const header = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Mes', 'Tipo', 'Resultado'];
+    const header = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Mes', 'Tipo', 'Resultado', 'Ejecutor'];
+    const asg = H.getState().asignacionesMP || {};
+    const ejecMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor; return (asg[`${YEAR}-${String(i + 1).padStart(2, '0')}`] || {})[e.inv] || ''; };
     const rows = [];
-    list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) { if (!H.mpProgramadaEnMes(e, MESES[i])) continue; rows.push([e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente']); } });
+    list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) { if (!H.mpProgramadaEnMes(e, MESES[i])) continue; rows.push([e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente', ejecMes(e, i)]); } });
     exportTablaExcel('Eventos_MP', 'Eventos MP por mes · ' + H.hoyLocal(), header, rows, `HHHA_eventos_MP_${YEAR}.xlsx`);
   }
   function mpMesBadge(e) {
@@ -916,7 +927,7 @@
         h('span', { class: 'faint', style: { fontSize: '11.5px' } }, 'Diferencias entre lo registrado y el maestro importado.')),
       h('div', { class: 'row-list', style: { marginTop: '8px' } }, ...confs.map(c => conflictoRow(c)))) : null;
 
-    return h('div', { class: 'view-narrow' },
+    return h('div', {},
       h('div', { style: { marginBottom: '10px', fontSize: '12px' } },
         h('span', { class: 'link', onclick: () => go(fichaOrigen || 'equipos') }, '← ' + (TIT_VISTA[fichaOrigen] ? 'Volver a ' + TIT_VISTA[fichaOrigen] : 'Volver'))),
       head, banner, avisoConf, tabs, body);
