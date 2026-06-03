@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.11';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.12';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -767,6 +767,7 @@
     function render() {
       const list = data();
       if (vmode === 'mes') return renderMes(list);
+      if (vmode === 'gantt') return renderGantt(list);
       const down = (f.estado === 'no_operativo' || f.estado === 'en_servicio_tecnico');   // vista caídos
       countNote.textContent = `${list.length} equipo${list.length !== 1 ? 's' : ''}`;
       const th = (key, lbl, cls, getter) => h('th', { class: (cls || '') + ' sortable', onclick: () => { if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; } render(); } },
@@ -803,12 +804,18 @@
       updBulk();
     }
     // Formato "por mes": una fila por equipo y por cada mes con MP programada (Mes · Tipo · Resultado).
-    function renderMes(list) {
-      let rows = [];
+    // Filas equipo×mes (con MP programada) YA pasadas por los embudos de columna (cfMes).
+    // Es la ÚNICA fuente: la tabla en pantalla y la exportación la usan, así jamás divergen
+    // (antes el export reconstruía todos los meses e ignoraba estos filtros → exportaba todo).
+    function mesRowsFiltradas(list) {
+      const rows = [];
       list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) if (H.mpProgramadaEnMes(e, MESES[i])) rows.push({ e, i }); });
+      return cfMes.apply(rows);
+    }
+    function renderMes(list) {
+      const rows = mesRowsFiltradas(list);
       const ejecutorMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor; const km = `${YEAR}-${String(i + 1).padStart(2, '0')}`; return ((S.asignacionesMP || {})[km] || {})[e.inv] || '—'; };
       const oficialMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); return ev ? (ev.oficial === 'Sí' ? 'Oficial' : 'No oficial') : '—'; };
-      rows = cfMes.apply(rows);   // filtros de columna (embudo Excel) sobre las filas equipo×mes
       const CAP = 500, capped = rows.length > CAP, shown = rows.slice(0, CAP);
       countNote.textContent = `${rows.length} fila(s) · ${new Set(rows.map(r => r.e.inv)).size} equipo(s)` + (capped ? ` · mostrando ${CAP}` : '');
       const resCell = (e, i) => { const r = H.resultadoMPMes(e, YEAR, i); if (!r) return h('span', { class: 'pill st' }, 'Pendiente'); if (r === 'Si') return h('span', { class: 'pill op' }, 'Sí'); if (r === 'Baja') return h('span', { class: 'pill baja' }, 'Baja'); if (r === 'No') return h('span', { class: 'faint' }, 'No'); return h('span', { class: 'pill noop' }, r); };
@@ -835,6 +842,45 @@
       kbList = { rows: shown.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
+    // Carta Gantt: una fila por equipo, una columna por mes, celda = resultado de la MP.
+    function ganttCelda(e, i) {
+      const r = H.resultadoMPMes(e, YEAR, i);
+      const prog = H.mpProgramadaEnMes(e, MESES[i]);
+      if (!r && !prog) return h('td', { class: 'g g-empty' }, '');
+      if (!r) return h('td', { class: 'g g-pe', title: MES_ESP(i) + ' · programada, pendiente' }, '·');
+      let cls = 'g-re', txt = r;
+      if (r === 'Si') { cls = 'g-ok'; txt = '✓'; }
+      else if (/^C\d/.test(r)) cls = 'g-re';
+      else if (r === 'FS' || r === 'NU') cls = 'g-no';
+      else if (r === 'Baja') { cls = 'g-ba'; txt = 'Baja'; }
+      else if (r === 'No') { cls = 'g-pe'; txt = 'No'; }
+      return h('td', { class: 'g ' + cls, title: MES_ESP(i) + ' · ' + r }, txt);
+    }
+    function renderGantt(list) {
+      const eqs = list.filter(e => e.estado !== 'baja');
+      const CAP = 250, capped = eqs.length > CAP, shown = eqs.slice(0, CAP);
+      countNote.textContent = `${eqs.length} equipo(s) · MP ${YEAR}` + (capped ? ` · mostrando ${CAP}` : '');
+      const legend = h('div', { class: 'gantt-legend' },
+        h('span', {}, h('i', { class: 'g-ok' }), 'Realizada (Sí)'),
+        h('span', {}, h('i', { class: 'g-re' }), 'Reprogramada (C1–C8)'),
+        h('span', {}, h('i', { class: 'g-no' }), 'FS / NU'),
+        h('span', {}, h('i', { class: 'g-ba' }), 'Baja'),
+        h('span', {}, h('i', { class: 'g-pe' }), 'Pendiente'),
+        h('span', {}, h('i', { class: 'g-empty' }), 'Sin MP'));
+      const table = h('table', { class: 'dense gantt' },
+        h('thead', {}, h('tr', {},
+          h('th', { class: 'g-fix1' }, 'N° Inv.'),
+          h('th', { class: 'g-fix2' }, 'Equipo'),
+          ...MESES.map((m, i) => h('th', { class: 'g-mh' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3))))),
+        h('tbody', {}, ...shown.map(e => h('tr', { style: { cursor: 'pointer' }, title: e.equipo || '', onclick: () => go('equipo', { inv: e.inv }) },
+          h('td', { class: 'g-fix1 mono' }, e.inv),
+          h('td', { class: 'g-fix2' }, capCell(150, e.equipo || '—')),
+          ...MESES.map((m, i) => ganttCelda(e, i))))));
+      mount(tblWrap, legend, h('div', { class: 'gantt-scroll' }, table),
+        capped ? h('div', { class: 'faint', style: { padding: '8px 2px', fontSize: '12px' } }, `Mostrando ${CAP} de ${eqs.length} equipos — usa los filtros (servicio, familia, estado) para acotar.`) : null);
+      kbList = { rows: shown.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
+      updBulk();
+    }
 
     const qInput = h('input', { type: 'search', placeholder: 'Buscar inv, equipo, serie, marca…', value: f.q, oninput: e => { f.q = e.target.value; render(); } });
     const seg = h('div', { class: 'seg' }, ...[['todos', 'Todos'], ['operativo', 'Operativos'], ['no_operativo', 'No oper.'], ['en_servicio_tecnico', 'Serv. téc.'], ['baja', 'Baja']].map(([v, l]) =>
@@ -847,7 +893,8 @@
     const incomingChip = chips.length ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, chips.join(' · ')), h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
     const vToggle = h('div', { class: 'seg', title: 'Vista de la tabla' },
       h('button', { class: vmode === 'equipo' ? 'on' : '', onclick: e => { vmode = 'equipo'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por equipo'),
-      h('button', { class: vmode === 'mes' ? 'on' : '', onclick: e => { vmode = 'mes'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por mes'));
+      h('button', { class: vmode === 'mes' ? 'on' : '', onclick: e => { vmode = 'mes'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por mes'),
+      h('button', { class: vmode === 'gantt' ? 'on' : '', onclick: e => { vmode = 'gantt'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Carta Gantt'));
     const root = h('div', {},
       h('div', { class: 'filterbar' }, qInput, seg, vToggle,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
@@ -855,7 +902,7 @@
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.sinEnc = e.target.checked; render(); } }), 'Sin encargado'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.sinProg ? true : false, onchange: e => { f.sinProg = e.target.checked; render(); } }), 'Sin prog. MP'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => (vmode === 'mes' ? exportarEquiposMes(data()) : exportarEquipos(data())) }, svg(ic.dl, 14), 'Exportar'),
+        h('button', { class: 'btn sm', onclick: () => (vmode === 'mes' ? exportarEquiposMes(mesRowsFiltradas(data())) : vmode === 'gantt' ? exportarGantt(data()) : exportarEquipos(data())) }, svg(ic.dl, 14), 'Exportar'),
         incomingChip, countNote),
       bulkBar, tblWrap);
     render();
@@ -866,15 +913,22 @@
     const rows = list.map(e => { const g = H.ultimaGestion(e.inv); return [e.id, e.inv, e.carpeta || '', e.equipo || '', e.serie || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', ESTADO_LABEL[e.estado] || e.estado, e.freq || '', H.diasEnEstado(e), g ? fmtFecha(g.fecha) : '', H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length]; });
     exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_equipos_${H.hoyLocal()}.xlsx`);
   }
-  // Export "por mes": una fila por equipo y mes con MP programada (reproduce Eventos_MP).
-  function exportarEquiposMes(list) {
-    const header = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Mes', 'Tipo', 'Resultado', 'Oficial', 'Ejecutor'];
+  // Export "por mes": recibe LAS MISMAS filas {e,i} que muestra la tabla (ya filtradas por
+  // los embudos), de modo que la exportación respeta exactamente la vista. Reproduce Eventos_MP.
+  function exportarEquiposMes(rows) {
+    const header = ['Fam', 'ID', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año de instalación', 'Vida útil residual (años)', 'Mes', 'Tipo', 'Resultado', 'Oficial', 'Ejecutor'];
     const asg = H.getState().asignacionesMP || {};
     const ejecMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor; return (asg[`${YEAR}-${String(i + 1).padStart(2, '0')}`] || {})[e.inv] || ''; };
     const oficMes = (e, i) => { const ev = H.eventoMPMes(e.inv, YEAR, i); return ev ? (ev.oficial === 'Sí' ? 'Oficial' : 'No oficial') : ''; };
-    const rows = [];
-    list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) { if (!H.mpProgramadaEnMes(e, MESES[i])) continue; rows.push([e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente', oficMes(e, i), ejecMes(e, i)]); } });
-    exportTablaExcel('Eventos_MP', 'Eventos MP por mes · ' + H.hoyLocal(), header, rows, `HHHA_eventos_MP_${YEAR}.xlsx`);
+    const out = (rows || []).map(({ e, i }) => [e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente', oficMes(e, i), ejecMes(e, i)]);
+    exportTablaExcel('Eventos_MP', 'Eventos MP por mes · ' + H.hoyLocal(), header, out, `HHHA_eventos_MP_${YEAR}.xlsx`);
+  }
+  // Export de la Carta Gantt: equipos × 12 meses con el resultado de la MP (respeta el filtro).
+  function exportarGantt(list) {
+    const header = ['N° Inv.', 'Equipo', 'Servicio', ...MESES.map((m, i) => MES_ESP(i))];
+    const rows = list.filter(e => e.estado !== 'baja').map(e => [e.inv, e.equipo || '', e.servicio || '',
+      ...MESES.map((m, i) => { const r = H.resultadoMPMes(e, YEAR, i); return r || (H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''); })]);
+    exportTablaExcel('Gantt MP', `Carta Gantt MP · ${YEAR}`, header, rows, `HHHA_gantt_MP_${YEAR}.xlsx`);
   }
   function mpMesBadge(e) {
     if (e.estado === 'baja') return h('span', { class: 'faint' }, '—');
@@ -1815,10 +1869,10 @@
         return exportTablaExcel('MP por mes', `MP por mes · ${y}`, ['Mes', 'Programadas', 'Ejec. oficiales', 'Ejec. borrador', 'Reprogramadas', 'No registradas', 'Realizadas', 'FS', 'NU', 'Baja', 'Sin registro', 'Asignadas', 'Sin asignar', 'Cumplimiento'], rows, `HHHA_mp_por_mes_${y}.xlsx`);
       }
       if (modo === 'responsable') {
-        const rows = filasPorResponsable().map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
+        const rows = cfResp.apply(filasPorResponsable()).map(r => [r.ej, r.pend, r.venc, r.mpMes, r.mpAno, r.evAno, r.cargo]);
         return exportTablaExcel('Responsables', `Indicadores por responsable · ${MES_ESP(m)} ${y}`, ['Responsable', 'Pend. abiertos', 'Vencidos', `MP ${MES_ESP(m)}`, `MP ${y}`, `Eventos ${y}`, 'Equipos a cargo'], rows, `HHHA_responsables_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
       }
-      const rows = filasPorServicio().map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
+      const rows = cfSv.apply(filasPorServicio()).map(r => [r.sv, r.total, r.op, r.no, r.stc, r.pctOp == null ? '' : r.pctOp + '%', r.prog ? (r.ejec + '/' + r.prog) : '', r.pctMP == null ? '' : r.pctMP + '%', r.atr, r.pend]);
       exportTablaExcel('Cumplimiento', `Cumplimiento por servicio · ${MES_ESP(m)} ${y}`, ['Servicio', 'Equipos', 'Operativos', 'No operativos', 'Serv. técnico', '% Operativo', `MP ${MES_ESP(m)} (ej/prog)`, '% Cumplimiento MP', 'MP atrasadas', 'Pendientes'], rows, `HHHA_cumplimiento_${y}-${String(m + 1).padStart(2, '0')}.xlsx`);
     }
     const seg = h('div', { class: 'seg' }, ...[['mes', 'Por mes'], ['servicio', 'Por servicio'], ['responsable', 'Por responsable']].map(([v, l]) =>

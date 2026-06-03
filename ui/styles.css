@@ -561,3 +561,28 @@ table.dense thead th:hover .funnel { opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ----------------------------- Carta Gantt ------------------------------ */
+.gantt-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 2px 2px 10px; font-size: 11.5px; color: var(--muted); }
+.gantt-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.gantt-legend i { width: 13px; height: 13px; border-radius: 3px; display: inline-block; border: 1px solid transparent; }
+.gantt-legend i.g-ok { background: var(--op); } .gantt-legend i.g-re { background: var(--st); }
+.gantt-legend i.g-no { background: var(--noop); } .gantt-legend i.g-ba { background: var(--baja); }
+.gantt-legend i.g-pe { background: var(--surface-2); border-color: var(--border-2); }
+.gantt-legend i.g-empty { background: var(--surface); border-color: var(--border); }
+
+.gantt-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+table.gantt { width: 100%; }
+table.gantt th.g-mh { text-align: center; min-width: 38px; padding: 5px 4px; font-size: 11px; }
+table.gantt th.g-mh.g-cur { color: var(--accent); border-bottom: 2px solid var(--accent); }
+table.gantt th.g-fix1, table.gantt td.g-fix1 { position: sticky; left: 0; z-index: 2; background: var(--surface); min-width: 86px; }
+table.gantt th.g-fix2, table.gantt td.g-fix2 { position: sticky; left: 86px; z-index: 2; background: var(--surface); min-width: 150px; box-shadow: 1px 0 0 var(--border); }
+table.gantt thead th.g-fix1, table.gantt thead th.g-fix2 { z-index: 3; background: var(--surface-2); }
+table.gantt tbody tr:hover td.g-fix1, table.gantt tbody tr:hover td.g-fix2 { background: var(--surface-2); }
+table.gantt td.g { text-align: center; min-width: 38px; padding: 4px 4px; font-size: 10.5px; font-weight: 700; }
+table.gantt td.g-ok { background: var(--op-bg); color: var(--op); }
+table.gantt td.g-re { background: var(--st-bg); color: var(--st); }
+table.gantt td.g-no { background: var(--noop-bg); color: var(--noop); }
+table.gantt td.g-ba { background: var(--baja-bg); color: var(--baja); }
+table.gantt td.g-pe { color: var(--faint); }
+table.gantt td.g-empty { color: transparent; }
