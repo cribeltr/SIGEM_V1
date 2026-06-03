@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /****************************************************************************
- * SIGEM · Smoke test (humo) del artefacto construido.
+ * Gestión Equipos Críticos HHHA · Smoke test del panel construido.
  * --------------------------------------------------------------------------
  * Carga app.html en un DOM headless (jsdom), arranca con la SEMILLA embebida
- * (sin archivos externos) y verifica que la app levanta y navega sin errores.
+ * (sin archivos externos) y verifica que el panel (Resumen · Datos · Ficha)
+ * levanta sobre datos reales del motor y opera sin errores.
  * No prueba lógica de negocio a fondo: detecta regresiones de "no arranca".
  *
  * Requisitos:  npm install --no-save jsdom
@@ -22,7 +23,13 @@ catch (e) {
 }
 
 const html = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
-const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://localhost/' });
+const dom = new JSDOM(html, {
+  runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://localhost/',
+  beforeParse(w) {
+    // jsdom no tiene canvas; Chart.js queda inerte (el panel lo envuelve en try/catch).
+    w.HTMLCanvasElement.prototype.getContext = () => null;
+  }
+});
 const w = dom.window;
 w.alert = () => {}; w.confirm = () => true; w.prompt = () => '';
 
@@ -34,30 +41,45 @@ const ok = (label, cond) => checks.push({ label, cond: !!cond });
 
 setTimeout(() => {
   try {
-    if (!w.HHHA || !w.HHHA.getState()) w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
+    const d = w.document;
 
-    // 1) El núcleo lógico expone su API y arranca el estado desde la semilla.
+    // 1) Motor disponible y arrancado desde la semilla.
     ok('HHHA disponible', w.HHHA && typeof w.HHHA.getState === 'function');
     const S = w.HHHA.getState();
     ok('estado inicial con equipos (semilla)', S && Array.isArray(S.equipos) && S.equipos.length > 0);
-    ok('estado con eventos y pendientes (semilla)', S && Array.isArray(S.eventos) && Array.isArray(S.pendientes));
     ok('catálogo de 12 meses (HHHA.MESES)', Array.isArray(w.HHHA.MESES) && w.HHHA.MESES.length === 12);
 
-    // 2) La UI montó la vista inicial.
-    const view = w.document.querySelector('#view');
-    ok('vista montada (#view con contenido)', view && view.children.length > 0);
+    // 2) Cabecera y navegación del panel montadas.
+    ok('cabecera montada (.head)', !!d.querySelector('.head'));
+    ok('navegación de 3 vistas', d.querySelectorAll('.nav button').length === 3);
 
-    // 3) Cada sección del menú navega sin lanzar errores.
-    const RUTAS = ['inicio', 'equipos', 'pendientes', 'eventos', 'ciclos', 'asignaciones', 'cumplimiento', 'configuracion'];
-    RUTAS.forEach(r => {
-      const antes = errs.length;
-      w.location.hash = '#' + r;
-      w.dispatchEvent(new w.Event('hashchange'));
-      const pintó = w.document.querySelector('#view') && w.document.querySelector('#view').children.length > 0;
-      ok(`navega #${r} sin error`, pintó && errs.length === antes);
-    });
+    // 3) RESUMEN: 6 KPIs, conteo total y tablas de alerta.
+    ok('6 KPIs en Resumen', d.querySelectorAll('#kpis .kpi').length === 6);
+    const tot = parseInt((d.getElementById('totalEq') || {}).textContent, 10);
+    ok('total de equipos > 0', tot > 0);
+    ok('tabla "no operativos" presente', !!d.getElementById('tblNoOp'));
+    ok('tabla "servicio técnico" presente', !!d.getElementById('tblSt'));
 
-    // 4) Sin errores de runtime capturados en window.
+    // 4) DATOS: al abrir, se arman las pestañas y la tabla.
+    const datosBtn = [...d.querySelectorAll('.nav button')].find(b => b.dataset.view === 'datos');
+    datosBtn && datosBtn.click();
+    const tabs = d.querySelectorAll('#tabs2 .tab2').length;
+    ok('Datos: ≥ 8 hojas de datos', tabs >= 8);
+    ok('Datos: columnas en la tabla', d.querySelectorAll('#headRow th').length > 0);
+    ok('Datos: filas en la página', d.querySelectorAll('#bodyRows tr').length > 0);
+
+    // 5) FICHA: buscar abre la ficha unificada de un equipo.
+    const fichaBtn = [...d.querySelectorAll('.nav button')].find(b => b.dataset.view === 'ficha');
+    fichaBtn && fichaBtn.click();
+    const inv = S.equipos[0].inv;
+    const f = d.getElementById('fSearch');
+    f.value = inv; f.dispatchEvent(new w.Event('input'));
+    const sg = d.querySelectorAll('.sg-item[data-inv]');
+    ok('Ficha: el buscador sugiere equipos', sg.length > 0);
+    sg[0] && sg[0].click();
+    ok('Ficha: se abre la hoja del equipo', !!d.querySelector('#ficha .f-hero'));
+
+    // 6) Sin errores de runtime capturados en window.
     ok('sin errores de runtime', errs.length === 0);
   } catch (e) {
     errs.push('Excepción en el test: ' + e.message);
