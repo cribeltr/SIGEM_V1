@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.6';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.7';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -851,12 +851,27 @@
     else if (tab === 'archivos') mount(body, tabArchivos(eq));
     else mount(body, tabHistorial(eq));
 
-    const banner = (eq.estado !== 'operativo' && eq.estado !== 'baja' && eq.estado !== 'desconocido')
-      ? h('div', { class: 'notice ' + (dias > 30 ? 'warn' : 'info'), style: { marginBottom: '12px' } },
-        `Estado: ${ESTADO_LABEL[eq.estado]} hace ${dias} día(s). Encargado: ${H.encargadoDe(eq) || '—'}.`
-        + (ug ? ` Última gestión: ${fmtFecha(ug.fecha)} (hace ${diasSinG} día(s)) · ${ug.texto}.` : ' Sin gestiones registradas.')
-        + (dias > 30 ? ' ⚠ Sin avance hace más de 30 días.' : ''))
-      : null;
+    // "Siguiente paso": qué hacer aquí, según el estado del equipo (responde "no sé qué hacer").
+    let pTit, pSub, pTono = 'warn', pLbl = null, pFn = null;
+    if (eq.estado === 'baja') {
+      pTono = ''; pTit = 'Equipo dado de baja'; pSub = eq.estadoDesde ? ('Desde ' + fmtFecha(eq.estadoDesde) + ' · sin más acciones') : 'Sin más acciones';
+    } else if (eq.estado === 'no_operativo' || eq.estado === 'en_servicio_tecnico') {
+      pTit = ESTADO_LABEL[eq.estado] + ' hace ' + dias + ' día(s)';
+      pSub = 'Registra un avance, o ciérralo cuando vuelva a operar · ' + (ug ? ('última gestión hace ' + diasSinG + ' día(s)') : 'sin gestiones registradas') + (dias > 30 ? ' · ⚠ +30 días sin avance' : '');
+      pLbl = 'Registrar gestión'; pFn = () => formRegistrarGestion(eq);
+    } else if (pends.length) {
+      pTit = pends.length + ' pendiente(s) por gestionar';
+      pSub = 'Recuérdalos, delégalos o márcalos resueltos en Historial';
+      pLbl = 'Ver pendientes'; pFn = () => go('equipo', { inv: eq.inv, tab: 'historial' });
+    } else {
+      pTono = ''; pTit = 'Operativo y sin pendientes'; pSub = 'Nada urgente. Si hiciste la mantención del mes, regístrala con "Nuevo evento".';
+    }
+    const banner = h('div', { class: 'home-task' + (pTono ? ' ' + pTono : ''), style: { marginBottom: '12px', cursor: pFn ? 'pointer' : 'default' }, onclick: pFn || null },
+      h('span', { class: 'ht-ico' }, svg(ic.pendientes, 20)),
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { class: 'ht-title' }, h('span', { class: 'faint', style: { fontWeight: 600, fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.4px', marginRight: '7px' } }, 'Siguiente paso'), pTit),
+        h('div', { class: 'ht-sub' }, pSub)),
+      pLbl ? h('button', { class: 'btn primary', onclick: e => { e.stopPropagation(); pFn(); } }, pLbl) : null);
     // Conflictos con el maestro: ya no son una pestaña, se muestran como aviso resoluble.
     const avisoConf = confs.length ? h('div', { class: 'notice warn', style: { marginBottom: '12px' } },
       h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
