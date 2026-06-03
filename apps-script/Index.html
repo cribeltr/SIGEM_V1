@@ -424,6 +424,7 @@ table.dense thead th:hover .funnel { opacity: .55; }
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); transition: border-color .12s, background .12s; }
 .pend-card:hover { border-color: var(--border-2); background: var(--surface-2); }
 .pend-card.recordar { border-left: 3px solid var(--noop); background: var(--noop-bg); }
+.pend-card.done { opacity: .68; }
 .pend-card .pc-main { flex: 1; min-width: 0; }
 .pc-badge { display: inline-block; font-size: 10px; font-weight: 700; color: var(--noop);
   background: color-mix(in srgb, var(--noop) 15%, transparent); padding: 1px 8px; border-radius: 20px; margin-bottom: 3px; }
@@ -2774,7 +2775,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.5';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.6';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3116,6 +3117,24 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       toast(`Recordados ${grupos[e].length} pendiente(s) a ${nombreCorto(e)}`, 'success'); scheduleRefresh();
     }]));
   }
+  // Tarjeta de pendiente reutilizable (Inicio y vista Pendientes). dias = días sin avance,
+  // recordar = resaltar (≥3 días). refrescar() vuelve a renderizar tras una acción.
+  function pendienteCardAcc(p, dias, recordar, refrescar) {
+    const cerrado = p.estado === 'cerrado';
+    const acciones = cerrado
+      ? [h('span', { class: 'chip', style: { color: 'var(--op)', borderColor: 'color-mix(in srgb, var(--op) 35%, var(--border))' } }, '✓ Resuelto'),
+         h('button', { class: 'btn sm ghost', title: 'Reabrir pendiente', onclick: () => { H.cambiarEstadoPend(p, 'en_proceso'); toast('Pendiente reabierto', 'success'); refrescar(); } }, 'Reabrir')]
+      : [h('button', { class: 'btn sm', title: 'Registrar que lo solicitaste / recordaste', onclick: () => { H.agregarSeguimiento(p, 'Solicitado / recordado a ' + (p.ejecutor || '—')); toast('Registrado · recordado a ' + (p.ejecutor ? nombreCorto(p.ejecutor) : '—'), 'success'); refrescar(); } }, 'Solicitar'),
+         h('button', { class: 'btn sm', title: 'Delegar a un ejecutor', onclick: ev => { ev.stopPropagation(); delegarPend(p, ev.currentTarget); } }, 'Delegar'),
+         h('button', { class: 'btn sm ok', title: 'Marcar como resuelto', onclick: () => { H.cerrarPendiente(p); toast('Pendiente resuelto', 'success'); refrescar(); } }, 'Resuelto')];
+    return h('div', { class: 'pend-card' + (recordar ? ' recordar' : '') + (cerrado ? ' done' : ''), onclick: () => formPendiente(p) },
+      h('div', { class: 'pc-main' },
+        recordar ? h('span', { class: 'pc-badge' }, p.ejecutor ? ('Recuérdale a ' + nombreCorto(p.ejecutor)) : 'Sin asignar — delégalo') : null,
+        h('div', { class: 'pc-title' }, h('span', {}, TIPO_PENDIENTE[p.tipo] || p.tipo), p.inv ? h('span', { class: 'pc-inv mono' }, p.inv) : null),
+        p.desc ? h('div', { class: 'pc-desc' }, p.desc) : null,
+        h('div', { class: 'pc-meta' }, (p.ejecutor ? 'Delegado a ' + nombreCorto(p.ejecutor) : 'Sin asignar') + ' · ' + (dias === 0 ? 'hoy' : 'hace ' + dias + ' día(s)') + (p.fechaComp ? ' · compromiso ' + fmtFecha(p.fechaComp) : ''))),
+      h('div', { class: 'pc-actions', onclick: e => e.stopPropagation() }, ...acciones));
+  }
   VIEWS.inicio = function () {
     const S = H.getState();
     const hoy = H.hoyLocal();
@@ -3178,16 +3197,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
     // === BLOQUE 2 · Pendientes (priorizados, regla de 3 días) ===
     const refrescar = () => scheduleRefresh();
-    const pendCard = ({ p, dias, recordar }) => h('div', { class: 'pend-card' + (recordar ? ' recordar' : ''), onclick: () => formPendiente(p) },
-      h('div', { class: 'pc-main' },
-        recordar ? h('span', { class: 'pc-badge' }, p.ejecutor ? ('Recuérdale a ' + nombreCorto(p.ejecutor)) : 'Sin asignar — delégalo') : null,
-        h('div', { class: 'pc-title' }, h('span', {}, TIPO_PENDIENTE[p.tipo] || p.tipo), p.inv ? h('span', { class: 'pc-inv mono' }, p.inv) : null),
-        p.desc ? h('div', { class: 'pc-desc' }, p.desc) : null,
-        h('div', { class: 'pc-meta' }, (p.ejecutor ? 'Delegado a ' + nombreCorto(p.ejecutor) : 'Sin asignar') + ' · ' + (dias === 0 ? 'hoy' : 'hace ' + dias + ' día(s)') + (p.fechaComp ? ' · compromiso ' + fmtFecha(p.fechaComp) : ''))),
-      h('div', { class: 'pc-actions', onclick: e => e.stopPropagation() },
-        h('button', { class: 'btn sm', title: 'Registrar que lo solicitaste / recordaste', onclick: () => { H.agregarSeguimiento(p, 'Solicitado / recordado a ' + (p.ejecutor || '—')); toast('Registrado · recordado a ' + (p.ejecutor ? nombreCorto(p.ejecutor) : '—'), 'success'); refrescar(); } }, 'Solicitar'),
-        h('button', { class: 'btn sm', title: 'Delegar a un ejecutor', onclick: ev => { ev.stopPropagation(); delegarPend(p, ev.currentTarget); } }, 'Delegar'),
-        h('button', { class: 'btn sm ok', title: 'Marcar como resuelto', onclick: () => { H.cerrarPendiente(p); toast('Pendiente resuelto', 'success'); refrescar(); } }, 'Resuelto')));
+    const pendCard = ({ p, dias, recordar }) => pendienteCardAcc(p, dias, recordar, refrescar);
     root.appendChild(h('div', { class: 'home-sec' },
       h('div', { class: 'home-sec-hd' },
         h('h2', {}, 'Pendientes'),
@@ -3804,7 +3814,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     pendSel = new Set();
     const cf = colFilters(render);
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
-    const wrap = h('div', { class: 'tbl-wrap' }); const note = h('span', { class: 'count-note' });
+    let vmode = 'cards'; const wrap = h('div', {}); const note = h('span', { class: 'count-note' });
     const cargaBox = h('div', {}); const bulkBar = h('div', { class: 'filterbar', style: { display: 'none', background: 'var(--accent-bg)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' } });
 
     // Conjunto base (estado/vencidos/tipo/servicio) sin el filtro de responsable — para la carga.
@@ -3852,7 +3862,14 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       renderCarga();
       const list = data();
       note.textContent = `${list.length} pendiente${list.length !== 1 ? 's' : ''}`;
-      mount(wrap, (list.length || cf.anyActive()) ? pendientesTable(list, { sel: pendSel, onToggle: updBulk, onAll: render, colf: cf }) : h('div', { class: 'empty' }, 'Sin resultados'));
+      if (vmode === 'cards') {
+        const baseDe = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean).sort(); const u = fs[fs.length - 1]; return (u && u > (p.fechaCrea || '')) ? u : (p.fechaCrea || H.hoyLocal()); };
+        mount(wrap, list.length
+          ? h('div', { class: 'pend-list', style: { maxWidth: '1480px' } }, ...list.map(p => { const d = H.diasEntreFechas(baseDe(p), H.hoyLocal()); return pendienteCardAcc(p, d, d >= 3 && p.estado !== 'cerrado', render); }))
+          : h('div', { class: 'empty' }, 'Sin resultados'));
+      } else {
+        mount(wrap, (list.length || cf.anyActive()) ? pendientesTable(list, { sel: pendSel, onToggle: updBulk, onAll: render, colf: cf }) : h('div', { class: 'empty' }, 'Sin resultados'));
+      }
       kbList = { rows: list.map(p => p.id), open: id => formPendiente(S.pendientes.find(p => p.id === id)), idx: -1 };
       updBulk();
     }
@@ -3860,19 +3877,25 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       h('button', { class: f.estado === v ? 'on' : '', onclick: e => { f.estado = v; params.vencidos = 0; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, l)));
     const presetChip = (params.tipo === 'reprogramacion' || params.record)
       ? h('span', { class: 'chip', style: { color: 'var(--accent)', borderColor: 'var(--accent)' } }, h('b', {}, params.record ? 'Recordatorios para hoy' : 'Reprogramaciones MP'), h('span', { class: 'x', onclick: () => go('pendientes', {}) }, '×')) : null;
+    const masF = h('div', { class: 'filterbar', style: { display: 'none' } },
+      selectEl([['', 'Todo tipo'], ...Object.entries(TIPO_PENDIENTE)], f.tipo, { onchange: e => { f.tipo = e.target.value; render(); } }),
+      selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.serv, { onchange: e => { f.serv = e.target.value; render(); } }),
+      h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: params.vencidos ? true : false, onchange: e => { params.vencidos = e.target.checked ? 1 : 0; render(); } }), 'Solo vencidos'),
+      h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.record ? true : false, onchange: e => { f.record = e.target.checked; render(); } }), 'Recordatorio ≤ hoy'));
+    const vToggle = h('div', { class: 'seg', title: 'Cómo ver la lista' },
+      h('button', { class: vmode === 'cards' ? 'on' : '', onclick: e => { vmode = 'cards'; [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Tarjetas'),
+      h('button', { class: vmode === 'tabla' ? 'on' : '', onclick: e => { vmode = 'tabla'; [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Tabla'));
     const root = h('div', {},
       h('div', { class: 'filterbar' },
         h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { f.q = e.target.value; render(); } }), seg,
-        selectEl([['', 'Todo tipo'], ...Object.entries(TIPO_PENDIENTE)], f.tipo, { onchange: e => { f.tipo = e.target.value; render(); } }),
-        selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.serv, { onchange: e => { f.serv = e.target.value; render(); } }),
         selectEl([['', 'Todo responsable'], ['__none', 'Sin asignar'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
-        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: params.vencidos ? true : false, onchange: e => { params.vencidos = e.target.checked ? 1 : 0; render(); } }), 'Solo vencidos'),
-        h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.record ? true : false, onchange: e => { f.record = e.target.checked; render(); } }), 'Recordatorio ≤ hoy'),
+        h('button', { class: 'btn sm', title: 'Más filtros (tipo, servicio, vencidos, recordatorio)', onclick: () => { masF.style.display = masF.style.display === 'none' ? '' : 'none'; } }, svg(ic.funnel, 13), 'Más filtros'),
         presetChip,
         h('div', { class: 'tb-spacer' }),
+        vToggle,
         h('button', { class: 'btn sm', onclick: () => exportarPendientes(data()) }, svg(ic.dl, 14), 'Exportar'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo'), note),
-      cargaBox, bulkBar, wrap);
+      masF, cargaBox, bulkBar, wrap);
     render(); return root;
   };
   function exportarPendientes(list) {
