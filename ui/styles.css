@@ -512,7 +512,7 @@ table.dense thead th:hover .funnel { opacity: .55; }
 [data-density="comodo"] .kb-card { padding: 10px 12px; }
 [data-density="comodo"] .reg-btn { padding: 13px 14px; }
 [data-density="comodo"] .pend-card { padding: 12px 14px; }
-[data-density="comodo"] .home { gap: 22px; max-width: 1180px; }
+[data-density="comodo"] .home { gap: 22px; }
 [data-density="comodo"] .pend-list { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 10px; }
 [data-density="comodo"] input[type=text], [data-density="comodo"] input[type=date],
 [data-density="comodo"] input[type=number], [data-density="comodo"] input[type=search],

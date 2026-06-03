@@ -2590,6 +2590,7 @@
         h('div', { class: 'tb-spacer' }),
         h('button', { class: 'btn sm', id: 'btn-grab', title: 'Iniciar grabación de la sesión', onclick: () => Grab.toggle() }, h('span', { class: 'rec-dot' }), h('span', { class: 's-hide' }, 'Grabar')),
         h('button', { class: 'btn icon ghost', title: 'Más vistas', onclick: ev => masMenu(ev.currentTarget) }, svg(ic.menu, 18)),
+        h('button', { class: 'btn icon ghost', id: 'btn-density', title: 'Densidad', onclick: () => applyDensity(document.documentElement.getAttribute('data-density') === 'comodo' ? 'compacto' : 'comodo') }, svg(ic.density, 16)),
         h('button', { class: 'btn icon ghost', id: 'btn-theme', title: 'Tema', onclick: () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark') }),
         h('button', { class: 'btn icon ghost', title: 'Configuración', onclick: () => go('configuracion') }, svg(ic.config, 16)),
         h('span', { class: 'u-avatar', title: 'Cristian · ' + APP_VERSION }, 'C'),
