@@ -54,7 +54,7 @@
   function svg(d, w) { return h('span', { class: 'ico', html: `<svg width="${w || 17}" height="${w || 17}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d.split('M').filter(Boolean).map(p => `<path d="M${p}"/>`).join('')}</svg>` }); }
 
   // ----------------------------- catálogos / helpers ------------------------
-  const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
+  const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
   const APP_VERSION = '2026-06-03 · v2.2';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
@@ -149,7 +149,7 @@
   // Registra, SOLO mientras está activa, las pantallas visitadas, los clics, los
   // resultados (avisos) y los errores. Al detener, exporta un archivo analizable.
   // No persiste nada en el estado ni en el Sheet: es un registro puntual y local.
-  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', tiempos: 'Tiempos de resolución', contactos: 'Contactos', configuracion: 'Configuración' };
+  const TIT_VISTA = { inicio: 'Inicio', panel: 'Panel de control', equipos: 'Equipos', equipo: 'Ficha de equipo', tablero: 'Tablero', pendientes: 'Pendientes', ciclos: 'Ciclos correctivos', eventos: 'Bitácora de eventos', asignaciones: 'MP del mes', cumplimiento: 'Cumplimiento', tiempos: 'Tiempos de resolución', recordatorios: 'Recordatorios', contactos: 'Contactos', configuracion: 'Configuración' };
   const Grab = {
     on: false, ini: null, pasos: [], _timer: null,
     log(tipo, accion, extra) {
@@ -1468,6 +1468,82 @@
     return root;
   };
 
+  // ---- RECORDATORIOS Y ESCALAMIENTO (resumen por responsable + Jefe CCRR) ---
+  VIEWS.recordatorios = function () {
+    const S = H.getState();
+    const hoy = H.hoyLocal();
+    const UMBRAL = 14;   // días sin avance para sugerir escalar
+    const root = h('div', { class: 'view-narrow' });
+    const baseDe = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean).sort(); const u = fs[fs.length - 1]; return (u && u > (p.fechaCrea || '')) ? u : (p.fechaCrea || hoy); };
+    const pend = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado').map(p => ({ p, dias: H.diasEntreFechas(baseDe(p), hoy) }));
+    const jefeDe = serv => H.contactosDeServicio(serv).filter(c => c.cargo === CARGOS_CONTACTO[2])
+      .sort((a, b) => ((b.servicio ? 1 : 0) - (a.servicio ? 1 : 0)) || ((b.correo ? 1 : 0) - (a.correo ? 1 : 0)))[0] || null;
+    const nomJefe = j => j ? (nombreCorto((j.nombre + ' ' + j.apellido).trim()) || j.correo || 'Jefe CCRR') : null;
+
+    root.appendChild(h('h2', { style: { margin: '0 0 3px', fontSize: '15px', fontWeight: 800, letterSpacing: '-.2px' } }, 'Recordatorios y escalamiento'));
+    root.appendChild(h('div', { class: 'faint', style: { fontSize: '11.5px', marginBottom: '12px' } },
+      'Resumen de pendientes abiertos por responsable y los que conviene escalar al Jefe CCRR (sin avance ≥ ' + UMBRAL + ' días).'));
+
+    // 1) Por responsable (resumen semanal)
+    const grupos = {};
+    pend.forEach(({ p, dias }) => {
+      const k = p.ejecutor || '— sin asignar';
+      const g = grupos[k] || (grupos[k] = { ejec: k, items: [], estancados: 0, max: 0 });
+      g.items.push(p); if (dias >= 7) g.estancados++; if (dias > g.max) g.max = dias;
+    });
+    const filas = Object.keys(grupos).map(k => grupos[k]).sort((a, b) => (b.estancados - a.estancados) || (b.items.length - a.items.length));
+    const recordarTodos = g => { g.items.forEach(p => H.agregarSeguimiento(p, 'Recordatorio enviado a ' + g.ejec)); toast('Recordatorio registrado en ' + g.items.length + ' pendiente(s) de ' + nombreCorto(g.ejec), 'success'); scheduleRefresh(); };
+    const rowResp = g => h('tr', {},
+      h('td', { style: { cursor: 'pointer' }, onclick: () => go('pendientes', { ejec: g.ejec === '— sin asignar' ? '__none' : g.ejec }) }, g.ejec),
+      h('td', { style: { textAlign: 'right' } }, g.items.length),
+      h('td', { style: { textAlign: 'right', color: g.estancados ? 'var(--st)' : null } }, g.estancados || '—'),
+      h('td', { style: { textAlign: 'right' } }, g.max + ' d'),
+      h('td', { style: { textAlign: 'right' } }, h('button', { class: 'btn sm', onclick: () => recordarTodos(g) }, 'Recordar a todos')));
+    const tablaResp = filas.length
+      ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'dense' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Responsable'), h('th', { style: { textAlign: 'right' } }, 'Pendientes'), h('th', { style: { textAlign: 'right' } }, 'Estancados ≥7d'), h('th', { style: { textAlign: 'right' } }, 'Más antiguo'), h('th', {}, ''))),
+        h('tbody', {}, ...filas.map(rowResp))))
+      : h('div', { class: 'faint', style: { fontSize: '12px', padding: '4px 2px' } }, 'No hay pendientes abiertos.');
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Por responsable'), h('span', { class: 's-sub' }, 'resumen semanal')),
+      h('div', { class: 's-bd flush' }, tablaResp)));
+
+    // 2) Escalamiento al Jefe CCRR
+    const escalar = pend.filter(x => x.dias >= UMBRAL).sort((a, b) => b.dias - a.dias);
+    const mailEscal = (p, jefe, dias) => {
+      const eq = H.findEquipo(p.inv);
+      const subj = 'Escalamiento · equipo ' + p.inv + ' sin resolver (' + dias + ' días)';
+      const body = 'Estimado/a ' + (jefe ? (jefe.nombre + ' ' + jefe.apellido).trim() : 'Jefe CCRR') + ':\n\n' +
+        'Solicito su apoyo con el siguiente pendiente, sin avance hace ' + dias + ' días:\n\n' +
+        '· Equipo: ' + p.inv + (eq ? ' · ' + (eq.equipo || '') : '') + '\n' +
+        '· Servicio: ' + (p.servicio || (eq && eq.servicio) || '—') + '\n' +
+        '· Tipo: ' + (TIPO_PENDIENTE[p.tipo] || p.tipo) + '\n' +
+        '· Detalle: ' + (p.desc || '—') + '\n' +
+        '· Responsable: ' + (p.ejecutor || 'sin asignar') + '\n\nSaludos.';
+      return 'mailto:' + ((jefe && jefe.correo) || '') + '?subject=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body);
+    };
+    const cardEsc = ({ p, dias }) => {
+      const jefe = jefeDe(p.servicio || (H.findEquipo(p.inv) || {}).servicio);
+      const acc = (jefe && jefe.correo)
+        ? h('a', { class: 'btn sm', href: mailEscal(p, jefe, dias), onclick: () => { H.agregarSeguimiento(p, 'Escalado al Jefe CCRR (' + nomJefe(jefe) + ')'); toast('Escalamiento registrado · abriendo correo', 'success'); setTimeout(scheduleRefresh, 60); } }, 'Escalar al Jefe CCRR')
+        : h('button', { class: 'btn sm', title: 'No hay correo de Jefe CCRR en Contactos para este servicio', onclick: () => { H.agregarSeguimiento(p, 'Escalado al Jefe CCRR'); toast('Escalamiento registrado. Agrega el correo del Jefe CCRR en Contactos para avisarle.', 'warn-backup'); go('contactos'); } }, 'Escalar (falta correo)');
+      const metaJefe = jefe ? ('Jefe CCRR: ' + nomJefe(jefe)) : 'sin Jefe CCRR en agenda';
+      return h('div', { class: 'pend-card recordar' },
+        h('div', { class: 'pc-main' },
+          h('div', { class: 'pc-title' }, h('span', {}, TIPO_PENDIENTE[p.tipo] || p.tipo), h('span', { class: 'pc-inv mono' }, p.inv), h('span', { class: 'pc-badge' }, dias + ' días sin avance')),
+          p.desc ? h('div', { class: 'pc-desc' }, p.desc) : null,
+          h('div', { class: 'pc-meta' }, (p.servicio || '—') + ' · ' + (p.ejecutor ? 'resp. ' + nombreCorto(p.ejecutor) : 'sin asignar') + ' · ' + metaJefe)),
+        h('div', { class: 'pc-actions' }, acc, h('button', { class: 'btn sm', onclick: () => formPendiente(p) }, 'Abrir')));
+    };
+    const cuerpoEsc = escalar.length
+      ? h('div', { class: 'pend-list' }, ...escalar.slice(0, 30).map(cardEsc))
+      : h('div', { class: 'faint', style: { fontSize: '12px' } }, '✓ Nada que escalar: ningún pendiente supera los ' + UMBRAL + ' días sin avance.');
+    root.appendChild(h('div', { class: 'section' },
+      h('div', { class: 's-hd' }, h('h3', {}, 'Para escalar al Jefe CCRR'), h('span', { class: 's-sub' }, 'sin avance ≥ ' + UMBRAL + ' días')),
+      h('div', { class: 's-bd' }, cuerpoEsc)));
+    return root;
+  };
+
   VIEWS.cumplimiento = function () {
     const S = H.getState();
     let y = params.year || YEAR, m = params.month != null ? +params.month : MONTH;
@@ -1991,7 +2067,7 @@
     const actions = [
       ['Ir: Inicio', ir('inicio'), '⌂'], ['Ir: Equipos', ir('equipos'), '▦'], ['Ir: Pendientes', ir('pendientes'), '✓'],
       ['Ir: Tablero', ir('tablero'), '▦'], ['Ir: Eventos / bitácora', ir('eventos'), '≡'], ['Ir: MP del mes', ir('asignaciones'), '▤'],
-      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Tiempos de resolución', ir('tiempos'), '⏱'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
+      ['Ir: Cumplimiento', ir('cumplimiento'), '▤'], ['Ir: Tiempos de resolución', ir('tiempos'), '⏱'], ['Ir: Recordatorios y escalamiento', ir('recordatorios'), '⤴'], ['Ir: Conflictos con el maestro', ir('conflictos'), '⚠'], ['Ir: Ciclos correctivos', ir('ciclos'), '↻'], ['Ir: Contactos', ir('contactos'), '☎'], ['Ir: Panel de control', ir('panel'), '◫'], ['Ir: Configuración', ir('configuracion'), '⚙'],
       ['Nuevo evento', () => { closeCmdk(); formNuevoEvento({}); }, '+'], ['Nuevo pendiente', () => { closeCmdk(); formNuevoPendiente({}); }, '+'],
       ['Cargar archivo maestro', () => { closeCmdk(); importarMaestro(() => scheduleRefresh()); }, '⭱'],
       [Grab.on ? 'Detener grabación y exportar' : 'Iniciar grabación', () => { closeCmdk(); Grab.toggle(); }, '⏺'],
@@ -2573,6 +2649,7 @@
       ['MP del mes', () => go('asignaciones')],
       ['Cumplimiento', () => go('cumplimiento')],
       ['Tiempos de resolución', () => go('tiempos')],
+      ['Recordatorios y escalamiento', () => go('recordatorios')],
       ['Conflictos con el maestro', () => go('conflictos')],
       ['Contactos', () => go('contactos')],
       ['Exportar Excel', () => excelExport()],
