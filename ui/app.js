@@ -477,8 +477,8 @@
         h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
       lista.length
-        ? h('div', {}, h('div', { class: 'pend-list' }, ...lista.slice(0, 25).map(pendCard)),
-          lista.length > 25 ? h('div', { style: { marginTop: '11px', fontSize: '12.5px' } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${lista.length - 25} pendientes restantes →`)) : null)
+        ? h('div', {}, h('div', { class: 'pend-list' }, ...lista.slice(0, 36).map(pendCard)),
+          lista.length > 36 ? h('div', { style: { marginTop: '11px', fontSize: '12.5px' } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${lista.length - 36} pendientes restantes →`)) : null)
         : h('div', { class: 'home-empty' }, '✓ No tienes pendientes activos.')));
 
     return root;

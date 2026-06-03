@@ -384,7 +384,7 @@ table.dense thead th:hover .funnel { opacity: .55; }
 .p-card-meta { display: flex; gap: 13px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 /* ----------------------------- Inicio ----------------------------------- */
-.home { max-width: 1180px; display: flex; flex-direction: column; gap: 14px; padding: 2px 0 36px; }
+.home { max-width: 1640px; display: flex; flex-direction: column; gap: 14px; padding: 2px 0 36px; }
 .home-hi { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .home-hi h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.3px; }
 .home-date { color: var(--muted); font-size: 12px; text-transform: capitalize; }
@@ -415,7 +415,7 @@ table.dense thead th:hover .funnel { opacity: .55; }
 .reg-grid.sec .reg-btn { padding: 7px 11px; font-size: 12px; font-weight: 600; }
 .reg-grid.sec .reg-btn svg { color: var(--muted); }
 
-.pend-list { display: flex; flex-direction: column; gap: 6px; }
+.pend-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 7px; align-items: start; }
 .pend-card { display: flex; align-items: center; gap: 12px; padding: 8px 12px; cursor: pointer;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); transition: border-color .12s, background .12s; }
 .pend-card:hover { border-color: var(--border-2); background: var(--surface-2); }
@@ -525,7 +525,8 @@ table.dense thead th:hover .funnel { opacity: .55; }
 [data-density="comodo"] .kb-card { padding: 10px 12px; }
 [data-density="comodo"] .reg-btn { padding: 13px 14px; }
 [data-density="comodo"] .pend-card { padding: 12px 14px; }
-[data-density="comodo"] .home { gap: 22px; max-width: 880px; }
+[data-density="comodo"] .home { gap: 22px; max-width: 1180px; }
+[data-density="comodo"] .pend-list { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 10px; }
 [data-density="comodo"] input[type=text], [data-density="comodo"] input[type=date],
 [data-density="comodo"] input[type=number], [data-density="comodo"] input[type=search],
 [data-density="comodo"] select, [data-density="comodo"] textarea { padding: 8px 11px; font-size: 13px; }
@@ -3116,8 +3117,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('button', { class: 'btn sm', onclick: () => go('pendientes') }, 'Ver todos'),
         h('button', { class: 'btn sm primary', onclick: () => formNuevoPendiente({}) }, svg(ic.plus, 14), 'Nuevo')),
       lista.length
-        ? h('div', {}, h('div', { class: 'pend-list' }, ...lista.slice(0, 25).map(pendCard)),
-          lista.length > 25 ? h('div', { style: { marginTop: '11px', fontSize: '12.5px' } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${lista.length - 25} pendientes restantes →`)) : null)
+        ? h('div', {}, h('div', { class: 'pend-list' }, ...lista.slice(0, 36).map(pendCard)),
+          lista.length > 36 ? h('div', { style: { marginTop: '11px', fontSize: '12.5px' } }, h('span', { class: 'link', onclick: () => go('pendientes') }, `Ver los ${lista.length - 36} pendientes restantes →`)) : null)
         : h('div', { class: 'home-empty' }, '✓ No tienes pendientes activos.')));
 
     return root;
