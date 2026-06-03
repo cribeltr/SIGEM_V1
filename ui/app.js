@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.14';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.15';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -721,9 +721,10 @@
     let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
     let vmode = 'equipo';   // 'equipo' = 1 fila/equipo · 'mes' = 1 fila por equipo y mes con MP
-    let gmode = (localStorage.getItem('sigem_gantt_mode') === 'cumpl') ? 'cumpl' : 'resultado';   // Carta Gantt: se recuerda entre sesiones
+    let gmode = (localStorage.getItem('sigem_gantt_mode') === 'pr') ? 'pr' : 'prog';   // Carta Gantt: 'prog' | 'pr' (se recuerda entre sesiones)
     const cf = colFilters(render);
     const cfMes = colFilters(render);   // filtros tipo Excel para el modo "Por mes" (filas equipo×mes)
+    const cfGantt = colFilters(render);   // filtros de columna para la Carta Gantt
     const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
     const eqSel = new Set();
     const servicios = [...new Set(S.equipos.map(e => e.servicio).filter(Boolean))].sort();
@@ -848,64 +849,79 @@
       const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor;
       const km = `${YEAR}-${String(i + 1).padStart(2, '0')}`; return ((S.asignacionesMP || {})[km] || {})[e.inv] || '';
     }
-    // Carta Gantt: una fila por equipo, una columna por mes. La celda muestra el RESULTADO
-    // o el cumplimiento (PROGRAMADO vs REALIZADO) según gmode. El tooltip detalla responsable.
-    function ganttCelda(e, i) {
+    // Carta Gantt: una fila por equipo, columnas por mes. "Programado" muestra la programación (P);
+    // "Programado vs realizado" añade, por mes, dos subcolumnas: Programación (P) y Resultado (R).
+    function ganttP(e, i) {
+      const p = (e.prog || {})[MESES[i]];
+      const prog = p || H.mpProgramadaEnMes(e, MESES[i]);
+      if (!prog) return h('td', { class: 'g gp g-empty' }, '');
+      return h('td', { class: 'g gp g-prog', title: `${MES_ESP(i)} · ${e.equipo || e.inv}\nProgramado: ${p || 'sí'}\nResponsable: ${gEjec(e, i) || '—'}` }, p || 'P');
+    }
+    function ganttR(e, i) {
       const r = H.resultadoMPMes(e, YEAR, i);
       const prog = H.mpProgramadaEnMes(e, MESES[i]);
-      const ejec = gEjec(e, i);
-      const tip = `${MES_ESP(i)} · ${e.equipo || e.inv}\n${prog ? 'Programado' : 'No programado'}\nResultado: ${r || '—'}\nResponsable: ${ejec || '—'}`;
-      if (gmode === 'cumpl') {
-        const est = H.mpEstadoMes(e, YEAR, i);   // ejecutada | reprogramada | otro | pendiente
-        if (est === 'ejecutada') return h('td', { class: 'g g-ok', title: tip }, '✓');
-        if (!prog) return h('td', { class: 'g g-empty' }, '');
-        if (est === 'reprogramada') return h('td', { class: 'g g-re', title: tip }, '↻');
-        if (i > MONTH) return h('td', { class: 'g g-pe', title: tip }, '·');   // mes futuro: aún no vence
-        return h('td', { class: 'g g-no', title: tip }, '✗');   // programado y vencido sin realizar
+      const tip = `${MES_ESP(i)} · ${e.equipo || e.inv}\nResultado: ${r || '—'}\nResponsable: ${gEjec(e, i) || '—'}`;
+      if (!r) {
+        if (prog && i <= MONTH) return h('td', { class: 'g gr g-no', title: tip }, '✗');   // vencido sin realizar
+        if (prog) return h('td', { class: 'g gr g-pe', title: tip }, '·');                  // futuro pendiente
+        return h('td', { class: 'g gr g-empty' }, '');
       }
-      if (!r && !prog) return h('td', { class: 'g g-empty' }, '');
-      if (!r) return h('td', { class: 'g g-pe', title: tip }, '·');
       let cls = 'g-re', txt = r;
       if (r === 'Si') { cls = 'g-ok'; txt = '✓'; }
       else if (/^C\d/.test(r)) cls = 'g-re';
       else if (r === 'FS' || r === 'NU') cls = 'g-no';
       else if (r === 'Baja') { cls = 'g-ba'; txt = 'Baja'; }
       else if (r === 'No') { cls = 'g-pe'; txt = 'No'; }
-      return h('td', { class: 'g ' + cls, title: tip }, txt);
+      return h('td', { class: 'g gr ' + cls, title: tip }, txt);
     }
+    // Filas de la Gantt ya filtradas por los embudos de columna (fuente única: tabla y export).
+    function ganttFiltradas(list) { return cfGantt.apply(list.filter(e => e.estado !== 'baja')); }
     function renderGantt(list) {
-      const eqs = list.filter(e => e.estado !== 'baja');
+      const eqs = ganttFiltradas(list);
       const CAP = 250, capped = eqs.length > CAP, shown = eqs.slice(0, CAP);
+      const pr = gmode === 'pr';
       countNote.textContent = `${eqs.length} equipo(s) · MP ${YEAR}` + (capped ? ` · mostrando ${CAP}` : '');
       const setGmode = v => { gmode = v; try { localStorage.setItem('sigem_gantt_mode', v); } catch (e) {} render(); };
-      const gToggle = h('div', { class: 'seg', title: 'Qué muestra cada celda' },
-        h('button', { class: gmode === 'resultado' ? 'on' : '', onclick: () => setGmode('resultado') }, 'Resultado'),
-        h('button', { class: gmode === 'cumpl' ? 'on' : '', onclick: () => setGmode('cumpl') }, 'Programado vs realizado'));
-      const legend = gmode === 'cumpl'
+      const gToggle = h('div', { class: 'seg', title: 'Qué muestran las columnas de cada mes' },
+        h('button', { class: !pr ? 'on' : '', onclick: () => setGmode('prog') }, 'Programado'),
+        h('button', { class: pr ? 'on' : '', onclick: () => setGmode('pr') }, 'Programado vs realizado'));
+      const legend = pr
         ? h('div', { class: 'gantt-legend' },
+          h('span', {}, h('i', { class: 'g-prog' }), 'P = programada'),
           h('span', {}, h('i', { class: 'g-ok' }), '✓ Realizada'),
-          h('span', {}, h('i', { class: 'g-re' }), '↻ Reprogramada'),
+          h('span', {}, h('i', { class: 'g-re' }), '↻/Cx Reprogramada'),
           h('span', {}, h('i', { class: 'g-no' }), '✗ No realizada (vencida)'),
-          h('span', {}, h('i', { class: 'g-pe' }), '· Pendiente'),
-          h('span', {}, h('i', { class: 'g-empty' }), 'Sin programar'))
+          h('span', {}, h('i', { class: 'g-pe' }), '· Pendiente'))
         : h('div', { class: 'gantt-legend' },
-          h('span', {}, h('i', { class: 'g-ok' }), 'Realizada (Sí)'),
-          h('span', {}, h('i', { class: 'g-re' }), 'Reprogramada (C1–C8)'),
-          h('span', {}, h('i', { class: 'g-no' }), 'FS / NU'),
-          h('span', {}, h('i', { class: 'g-ba' }), 'Baja'),
-          h('span', {}, h('i', { class: 'g-pe' }), 'Pendiente'),
-          h('span', {}, h('i', { class: 'g-empty' }), 'Sin MP'));
-      const table = h('table', { class: 'dense gantt' },
-        h('thead', {}, h('tr', {},
-          h('th', { class: 'g-fix1' }, 'N° Inv.'),
-          h('th', { class: 'g-fix2' }, 'Equipo'),
-          ...MESES.map((m, i) => h('th', { class: 'g-mh' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3))))),
-        h('tbody', {}, ...shown.map(e => h('tr', { style: { cursor: 'pointer' }, title: e.equipo || '', onclick: () => go('equipo', { inv: e.inv }) },
+          h('span', {}, h('i', { class: 'g-prog' }), 'Programada'),
+          h('span', {}, h('i', { class: 'g-empty' }), 'Sin programar'));
+      // Columnas identificadoras CON FILTROS (embudos tipo Excel). En modo P-vs-R abarcan 2 filas.
+      const gthFix = (key, label, getter, cls) => h('th', { class: cls || '', rowspan: pr ? '2' : null }, h('span', { class: 'th-lbl' }, label), cfGantt.btn(key, label, getter));
+      const idHead = [
+        gthFix('inv', 'N° Inv.', e => e.inv, 'g-fix1'),
+        gthFix('equipo', 'Equipo', e => e.equipo || '—', 'g-fix2'),
+        gthFix('servicio', 'Servicio', e => e.servicio || '—'),
+        gthFix('unidad', 'Unidad', e => e.unidad || '—')
+      ];
+      const thead = pr
+        ? h('thead', {},
+          h('tr', {}, ...idHead, ...MESES.map((m, i) => h('th', { colspan: '2', class: 'g-mh g-grp' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3)))),
+          h('tr', {}, ...MESES.map((m, i) => [h('th', { class: 'g-sub g-grp' + (i === MONTH ? ' g-cur' : ''), title: 'Programación' }, 'P'), h('th', { class: 'g-sub' + (i === MONTH ? ' g-cur' : ''), title: 'Resultado' }, 'R')]).flat())
+        )
+        : h('thead', {}, h('tr', {}, ...idHead, ...MESES.map((m, i) => h('th', { class: 'g-mh' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3)))));
+      const fila = e => {
+        const cells = [
           h('td', { class: 'g-fix1 mono' }, e.inv),
           h('td', { class: 'g-fix2' }, capCell(150, e.equipo || '—')),
-          ...MESES.map((m, i) => ganttCelda(e, i))))));
+          h('td', { class: 'muted' }, capCell(140, e.servicio || '—')),
+          h('td', { class: 'muted' }, capCell(120, e.unidad || '—'))
+        ];
+        MESES.forEach((m, i) => { if (pr) { const pc = ganttP(e, i); pc.classList.add('g-grp'); cells.push(pc, ganttR(e, i)); } else cells.push(ganttP(e, i)); });
+        return h('tr', { style: { cursor: 'pointer' }, title: e.equipo || '', onclick: () => go('equipo', { inv: e.inv }) }, ...cells);
+      };
+      const table = h('table', { class: 'dense gantt' + (pr ? ' gantt-pr' : '') }, thead, h('tbody', {}, ...shown.map(fila)));
       mount(tblWrap, h('div', { class: 'gantt-head' }, gToggle, legend), h('div', { class: 'gantt-scroll' }, table),
-        capped ? h('div', { class: 'faint', style: { padding: '8px 2px', fontSize: '12px' } }, `Mostrando ${CAP} de ${eqs.length} equipos — usa los filtros (servicio, familia, estado) para acotar.`) : null);
+        capped ? h('div', { class: 'faint', style: { padding: '8px 2px', fontSize: '12px' } }, `Mostrando ${CAP} de ${eqs.length} equipos — usa los filtros de columna o los de arriba (servicio, familia, estado) para acotar.`) : null);
       kbList = { rows: shown.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
@@ -930,7 +946,7 @@
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', onchange: e => { f.sinEnc = e.target.checked; render(); } }), 'Sin encargado'),
         h('label', { class: 'checkbox' }, h('input', { type: 'checkbox', checked: f.sinProg ? true : false, onchange: e => { f.sinProg = e.target.checked; render(); } }), 'Sin prog. MP'),
         h('div', { class: 'tb-spacer' }),
-        h('button', { class: 'btn sm', onclick: () => (vmode === 'mes' ? exportarEquiposMes(mesRowsFiltradas(data())) : vmode === 'gantt' ? exportarGantt(data()) : exportarEquipos(data())) }, svg(ic.dl, 14), 'Exportar'),
+        h('button', { class: 'btn sm', onclick: () => (vmode === 'mes' ? exportarEquiposMes(mesRowsFiltradas(data())) : vmode === 'gantt' ? exportarGantt(ganttFiltradas(data())) : exportarEquipos(data())) }, svg(ic.dl, 14), 'Exportar'),
         incomingChip, countNote),
       bulkBar, tblWrap);
     render();
@@ -951,11 +967,18 @@
     const out = (rows || []).map(({ e, i }) => [e.fam || '', e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', MES_ESP(i), (e.prog || {})[MESES[i]] || '', H.resultadoMPMes(e, YEAR, i) || 'Pendiente', oficMes(e, i), ejecMes(e, i)]);
     exportTablaExcel('Eventos_MP', 'Eventos MP por mes · ' + H.hoyLocal(), header, out, `HHHA_eventos_MP_${YEAR}.xlsx`);
   }
-  // Export de la Carta Gantt: equipos × 12 meses con el resultado de la MP (respeta el filtro).
+  // Export de la Carta Gantt: equipos × 12 meses, con Programación y Resultado por mes (respeta el filtro).
   function exportarGantt(list) {
-    const header = ['N° Inv.', 'Equipo', 'Servicio', ...MESES.map((m, i) => MES_ESP(i))];
-    const rows = list.filter(e => e.estado !== 'baja').map(e => [e.inv, e.equipo || '', e.servicio || '',
-      ...MESES.map((m, i) => { const r = H.resultadoMPMes(e, YEAR, i); return r || (H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''); })]);
+    const header = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad'];
+    MESES.forEach((m, i) => { header.push(MES_ESP(i) + ' Prog.'); header.push(MES_ESP(i) + ' Resultado'); });
+    const rows = list.map(e => {
+      const row = [e.inv, e.equipo || '', e.servicio || '', e.unidad || ''];
+      MESES.forEach((m, i) => {
+        row.push((e.prog || {})[MESES[i]] || (H.mpProgramadaEnMes(e, MESES[i]) ? 'P' : ''));
+        row.push(H.resultadoMPMes(e, YEAR, i) || (H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''));
+      });
+      return row;
+    });
     exportTablaExcel('Gantt MP', `Carta Gantt MP · ${YEAR}`, header, rows, `HHHA_gantt_MP_${YEAR}.xlsx`);
   }
   function mpMesBadge(e) {
