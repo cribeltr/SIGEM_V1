@@ -211,6 +211,8 @@ table.dense tbody tr { cursor: pointer; transition: background .1s; }
 table.dense tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
 table.dense tbody tr:hover { background: var(--surface-2); }
 table.dense tbody tr.sel { background: var(--accent-bg); }
+table.dense tbody tr.mes-actual td { background: color-mix(in srgb, var(--accent-bg) 70%, transparent); }
+table.dense tbody tr.mes-actual td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 table.dense tbody tr.kb-focus td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 table.dense tbody tr:last-child td { border-bottom: none; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }

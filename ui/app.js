@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.8';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.9';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -872,6 +872,7 @@
     const tab = TAB_MAP[params.tab] || 'seguimiento';
     const confs = H.conflictosDe(eq.inv);
     const pends = H.pendientesDe(eq.inv).filter(p => p.estado !== 'cerrado');
+    const nEvBitacora = H.eventosDeTodos(eq.inv).filter(e => !H.eventoEsAuto(e)).length;
     const dias = H.diasEnEstado(eq);
     const ug = H.ultimaGestion(eq.inv);
     const diasSinG = ug ? H.diasEntreFechas(ug.fecha, H.hoyLocal()) : null;
@@ -898,7 +899,7 @@
         h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
-    const tabsDef = [['mantencion', 'Mantención'], ['seguimiento', 'Seguimiento', pends.length], ['bitacora', 'Bitácora'], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
+    const tabsDef = [['mantencion', 'Mantención'], ['seguimiento', 'Seguimiento', pends.length], ['bitacora', 'Bitácora', nEvBitacora], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
     const tabs = h('div', { class: 'tabs' }, ...tabsDef.map(([id, lbl, n]) =>
       h('button', { class: tab === id ? 'on' : '', onclick: () => go('equipo', { inv: eq.inv, tab: id }) }, lbl, n ? h('span', { class: 'badge-count' }, n) : null)));
 
@@ -1090,8 +1091,9 @@
             const tip = ev ? (`${m} ${yr} · ${ev.resultado || 'Si'} · ${ev.ejecutor || 'sin ejecutor'}` + (tieneObs ? `\nObs: ${ev.obs}` : '')) : (r ? `${m}: ${r}` : `${m}: sin registro`);
             const km = `${yr}-${String(i + 1).padStart(2, '0')}`;
             const asig = (S.asignacionesMP || {})[km] || {};
-            return h('tr', {},
-              h('td', { style: { fontWeight: 600 } }, MES_ESP(i)),
+            const esActual = (yr === YEAR && i === MONTH);
+            return h('tr', { class: esActual ? 'mes-actual' : '' },
+              h('td', { style: { fontWeight: 600 } }, MES_ESP(i), esActual ? h('span', { class: 'tag', style: { marginLeft: '7px', color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 35%, var(--border))' } }, 'actual') : null),
               h('td', { class: 'mpcell ' + (p ? 'x' : '') }, p || '·'),
               h('td', { class: 'mpcell ' + mpResultClass(r), title: tip, style: { cursor: 'pointer' }, onclick: () => formMP(eq.inv, `${yr}-${String(i + 1).padStart(2, '0')}-05`) }, r || '·', tieneObs ? h('sup', { style: { color: 'var(--accent)' } }, '✎') : null),
               h('td', { style: { padding: '3px 6px' } }, selectEl([['', '—'], ...EJECUTORES.map(x => [x, x])], asig[eq.inv] || '',
