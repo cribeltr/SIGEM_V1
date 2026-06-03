@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.4';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.5';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2745,7 +2745,7 @@
     mount(document.getElementById('root'), app);
 
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
-    applyDensity(localStorage.getItem('sigem_density') || 'compacto');
+    applyDensity(localStorage.getItem('sigem_density') || 'comodo');
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);

@@ -388,7 +388,7 @@ table.dense thead th:hover .funnel { opacity: .55; }
 .p-card-meta { display: flex; gap: 13px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 /* ----------------------------- Inicio ----------------------------------- */
-.home { max-width: none; display: flex; flex-direction: column; gap: 14px; padding: 2px 0 36px; }
+.home { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; padding: 2px 0 36px; }
 .home-hi { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .home-hi h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.3px; }
 .home-date { color: var(--muted); font-size: 12px; text-transform: capitalize; }
@@ -419,8 +419,8 @@ table.dense thead th:hover .funnel { opacity: .55; }
 .reg-grid.sec .reg-btn { padding: 7px 11px; font-size: 12px; font-weight: 600; }
 .reg-grid.sec .reg-btn svg { color: var(--muted); }
 
-.pend-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 7px; align-items: start; }
-.pend-card { display: flex; align-items: center; gap: 12px; padding: 8px 12px; cursor: pointer;
+.pend-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 10px; align-items: start; }
+.pend-card { display: flex; align-items: flex-start; gap: 13px; padding: 12px 15px; cursor: pointer;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); transition: border-color .12s, background .12s; }
 .pend-card:hover { border-color: var(--border-2); background: var(--surface-2); }
 .pend-card.recordar { border-left: 3px solid var(--noop); background: var(--noop-bg); }
@@ -528,9 +528,9 @@ table.dense thead th:hover .funnel { opacity: .55; }
 [data-density="comodo"] table.dense tbody tr:nth-child(even) { background: transparent; }
 [data-density="comodo"] .kb-card { padding: 10px 12px; }
 [data-density="comodo"] .reg-btn { padding: 13px 14px; }
-[data-density="comodo"] .pend-card { padding: 12px 14px; }
+[data-density="comodo"] .pend-card { padding: 14px 16px; }
 [data-density="comodo"] .home { gap: 22px; }
-[data-density="comodo"] .pend-list { grid-template-columns: repeat(auto-fill, minmax(540px, 1fr)); gap: 10px; }
+[data-density="comodo"] .pend-list { grid-template-columns: repeat(auto-fill, minmax(580px, 1fr)); gap: 12px; }
 [data-density="comodo"] input[type=text], [data-density="comodo"] input[type=date],
 [data-density="comodo"] input[type=number], [data-density="comodo"] input[type=search],
 [data-density="comodo"] select, [data-density="comodo"] textarea { padding: 8px 11px; font-size: 13px; }
@@ -2774,7 +2774,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.4';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.5';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -5462,7 +5462,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     mount(document.getElementById('root'), app);
 
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
-    applyDensity(localStorage.getItem('sigem_density') || 'compacto');
+    applyDensity(localStorage.getItem('sigem_density') || 'comodo');
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);
