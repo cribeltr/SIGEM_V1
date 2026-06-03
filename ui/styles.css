@@ -561,3 +561,17 @@ table.dense thead th:hover .funnel { opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* -------------------- Resumen del día (vista Equipos) ------------------- */
+.eq-resumen { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-bottom: 10px; }
+.eq-kpi { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 12px; cursor: pointer; font: inherit; transition: border-color .1s, background .1s; min-width: 76px; }
+.eq-kpi:hover { border-color: var(--faint); background: var(--surface-2); }
+.eq-kpi b { font-size: 17px; font-weight: 800; line-height: 1.15; }
+.eq-kpi span { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.eq-kpi.op b { color: var(--op); } .eq-kpi.noop b { color: var(--noop); } .eq-kpi.st b { color: var(--st); }
+.eq-kpi.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.eq-kpi-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
+/* Pendientes vencidos: realce de fila en la tabla */
+table.dense tbody tr.pend-venc td:first-child { box-shadow: inset 3px 0 0 var(--noop); }
+table.dense tbody tr.pend-venc td { background: color-mix(in srgb, var(--noop-bg) 45%, transparent); }
+table.dense tbody tr.pend-venc:hover td { background: var(--noop-bg); }

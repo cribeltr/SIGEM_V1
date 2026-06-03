@@ -577,6 +577,20 @@ table.dense thead th:hover .funnel { opacity: .55; }
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
 
+/* -------------------- Resumen del día (vista Equipos) ------------------- */
+.eq-resumen { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-bottom: 10px; }
+.eq-kpi { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 12px; cursor: pointer; font: inherit; transition: border-color .1s, background .1s; min-width: 76px; }
+.eq-kpi:hover { border-color: var(--faint); background: var(--surface-2); }
+.eq-kpi b { font-size: 17px; font-weight: 800; line-height: 1.15; }
+.eq-kpi span { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.eq-kpi.op b { color: var(--op); } .eq-kpi.noop b { color: var(--noop); } .eq-kpi.st b { color: var(--st); }
+.eq-kpi.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.eq-kpi-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
+/* Pendientes vencidos: realce de fila en la tabla */
+table.dense tbody tr.pend-venc td:first-child { box-shadow: inset 3px 0 0 var(--noop); }
+table.dense tbody tr.pend-venc td { background: color-mix(in srgb, var(--noop-bg) 45%, transparent); }
+table.dense tbody tr.pend-venc:hover td { background: var(--noop-bg); }
+
 </style>
 <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('sigem_theme')||'light')}catch(e){}</script>
 </head>
@@ -2778,7 +2792,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.17';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.18';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3470,6 +3484,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (f.sinEnc) list = list.filter(e => e.estado !== 'baja' && !H.encargadoDe(e));
       if (f.sinProg) list = list.filter(e => H.sinProgramacionMP(e));
       if (params.alerta30) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado) && H.diasEnEstado(e) > 30);
+      if (params.caidos) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado));
+      if (params.mpMes) list = list.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]) && H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
       if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
       if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
       list = cf.apply(list);
@@ -3569,13 +3585,37 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
     const chips = [];
     if (params.alerta30) chips.push('Alerta >30 días');
+    if (params.caidos) chips.push('Equipos caídos');
+    if (params.mpMes) chips.push('MP del mes pendientes');
     if (params.mpAtras) chips.push('MP atrasadas');
     if (params.sinProg) chips.push('Sin programación MP');
     const incomingChip = chips.length ? h('span', { class: 'chip', style: { color: 'var(--noop)' } }, h('b', {}, chips.join(' · ')), h('span', { class: 'x', onclick: () => go('equipos', {}) }, '×')) : null;
+
+    // Resumen del día: indicadores clicables que filtran la tabla o saltan a Pendientes
+    // (traen a Equipos las señales que antes solo se veían en Inicio / Cumplimiento).
+    const vivos = S.equipos.filter(e => e.estado !== 'baja');
+    const nOper = vivos.filter(e => e.estado === 'operativo').length;
+    const nCaidos = vivos.filter(e => e.estado === 'no_operativo' || e.estado === 'en_servicio_tecnico').length;
+    const nMpMes = vivos.filter(e => H.mpProgramadaEnMes(e, MESES[MONTH]) && H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente').length;
+    const nSinGest = vivos.filter(e => (e.estado === 'no_operativo' || e.estado === 'en_servicio_tecnico') && H.diasEnEstado(e) > 30).length;
+    const pendAb = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const nVenc = pendAb.filter(p => p.fechaComp && p.fechaComp < H.hoyLocal()).length;
+    const nSinResp = pendAb.filter(p => !p.ejecutor).length;
+    const pctOper = vivos.length ? Math.round(nOper / vivos.length * 100) : 0;
+    const kpi = (cls, n, label, onclick, active) => h('button', { class: 'eq-kpi ' + cls + (active ? ' active' : ''), onclick }, h('b', {}, n), h('span', {}, label));
+    const resumen = h('div', { class: 'eq-resumen' },
+      kpi('op', pctOper + '%', nOper + ' operativos', () => go('equipos', { estado: 'operativo' }), params.estado === 'operativo'),
+      kpi('noop', nCaidos, 'caídos', () => go('equipos', { caidos: 1 }), !!params.caidos),
+      kpi('st', nMpMes, 'MP del mes pend.', () => go('equipos', { mpMes: 1 }), !!params.mpMes),
+      kpi('noop', nSinGest, 'sin gestión >30 d', () => go('equipos', { alerta30: 1 }), !!params.alerta30),
+      h('span', { class: 'eq-kpi-sep' }),
+      kpi('noop', nVenc, 'pendientes vencidos', () => go('pendientes', { vencidos: 1 })),
+      kpi('st', nSinResp, 'pend. sin responsable', () => go('pendientes', { ejec: '__none' })));
     const vToggle = h('div', { class: 'seg', title: 'Vista de la tabla' },
       h('button', { class: vmode === 'equipo' ? 'on' : '', onclick: e => { vmode = 'equipo'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por equipo'),
       h('button', { class: vmode === 'mes' ? 'on' : '', onclick: e => { vmode = 'mes'; eqSel.clear(); [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Por mes'));
     const root = h('div', {},
+      resumen,
       h('div', { class: 'filterbar' }, qInput, seg, vToggle,
         field(null, selectEl([['', 'Todo servicio'], ...servicios.map(s => [s, s])], f.servicio, { onchange: e => { f.servicio = e.target.value; render(); } })),
         field(null, selectEl([['', 'Toda familia'], ...familias.map(s => [s, s])], f.fam, { onchange: e => { f.fam = e.target.value; render(); } })),
@@ -3645,8 +3685,10 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         datos),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary sm', onclick: () => formNuevoEvento({ inv: eq.inv }) }, svg(ic.plus, 14), 'Nuevo evento'),
+        eq.estado !== 'baja' ? h('button', { class: 'btn sm', title: 'Registrar la mantención preventiva de este mes', onclick: () => formMP(eq.inv) }, svg(ic.check, 14), 'MP del mes') : null,
         (eq.estado === 'no_operativo' || eq.estado === 'en_servicio_tecnico') ? h('button', { class: 'btn sm', title: 'Registrar seguimiento y fijar recordatorio', onclick: () => formRegistrarGestion(eq) }, svg(ic.cloud, 14), 'Registrar gestión') : null,
-        h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, 'Pendiente'),
+        H.ciclosAbiertosDe(eq.inv).length ? h('button', { class: 'btn sm', title: 'Cerrar el ciclo correctivo (el equipo vuelve a operativo)', onclick: () => formNuevoEvento({ inv: eq.inv, tipo: 'Reparación', estado: 'operativo' }) }, svg(ic.check, 14), 'Cerrar ciclo') : null,
+        h('button', { class: 'btn sm', onclick: () => formNuevoPendiente({ inv: eq.inv }) }, svg(ic.plus, 14), 'Pendiente'),
         eq.estado !== 'baja' ? h('button', { class: 'btn sm danger', onclick: () => formBaja(eq) }, 'Dar de baja') : null));
 
     const tabsDef = [['mantencion', 'Mantención'], ['seguimiento', 'Seguimiento', pends.length], ['bitacora', 'Bitácora', nEvBitacora], ['archivos', 'Archivos', (eq.adjuntos || []).length]];
@@ -3929,6 +3971,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       if (f.estado === 'activos') list = list.filter(p => p.estado !== 'cerrado');
       else if (f.estado !== 'todos') list = list.filter(p => p.estado === f.estado);
       if (params.vencidos) list = list.filter(p => p.fechaComp && p.fechaComp < H.hoyLocal() && p.estado !== 'cerrado');
+      if (params.semana) { const lim = H.addDias(H.hoyLocal(), 7); list = list.filter(p => p.fechaComp && p.fechaComp >= H.hoyLocal() && p.fechaComp <= lim && p.estado !== 'cerrado'); }
       if (f.tipo) list = list.filter(p => p.tipo === f.tipo);
       if (f.serv) list = list.filter(p => p.servicio === f.serv);
       return list;
@@ -3991,7 +4034,20 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const vToggle = h('div', { class: 'seg', title: 'Cómo ver la lista' },
       h('button', { class: vmode === 'cards' ? 'on' : '', onclick: e => { vmode = 'cards'; [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Tarjetas'),
       h('button', { class: vmode === 'tabla' ? 'on' : '', onclick: e => { vmode = 'tabla'; [...vToggle.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); render(); } }, 'Tabla'));
+    // Resumen del día: prioriza de un vistazo (clic = filtra).
+    const activos = S.pendientes.filter(p => !p.anulado && p.estado !== 'cerrado');
+    const hoyP = H.hoyLocal(); const lim7 = H.addDias(hoyP, 7);
+    const nVenc = activos.filter(p => p.fechaComp && p.fechaComp < hoyP).length;
+    const nSem = activos.filter(p => p.fechaComp && p.fechaComp >= hoyP && p.fechaComp <= lim7).length;
+    const nSinR = activos.filter(p => !p.ejecutor).length;
+    const kpiP = (cls, n, label, onclick, active) => h('button', { class: 'eq-kpi ' + cls + (active ? ' active' : ''), onclick }, h('b', {}, n), h('span', {}, label));
+    const resumenP = h('div', { class: 'eq-resumen' },
+      kpiP('', activos.length, 'activos', () => go('pendientes', {}), !params.vencidos && !params.semana && f.ejec !== '__none'),
+      kpiP('noop', nVenc, 'vencidos', () => go('pendientes', { vencidos: 1 }), !!params.vencidos),
+      kpiP('st', nSem, 'esta semana', () => go('pendientes', { semana: 1 }), !!params.semana),
+      kpiP('st', nSinR, 'sin responsable', () => go('pendientes', { ejec: '__none' }), f.ejec === '__none'));
     const root = h('div', {},
+      resumenP,
       h('div', { class: 'filterbar' },
         h('input', { type: 'search', placeholder: 'Buscar…', oninput: e => { f.q = e.target.value; render(); } }), seg,
         selectEl([['', 'Todo responsable'], ['__none', 'Sin asignar'], ...EJECUTORES.map(x => [x, x])], f.ejec, { onchange: e => { f.ejec = e.target.value; render(); } }),
@@ -4033,7 +4089,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         const recVenc = p.proxRecord && p.proxRecord <= H.hoyLocal() && p.estado !== 'cerrado';
         const chk = sel ? h('td', { onclick: ev => ev.stopPropagation() }, h('input', { type: 'checkbox', checked: sel.has(p.id) ? true : false, onchange: ev => { ev.target.checked ? sel.add(p.id) : sel.delete(p.id); tr.classList.toggle('sel', ev.target.checked); opts.onToggle && opts.onToggle(); } })) : null;
         const ult = ultActP(p);
-        const tr = h('tr', { class: sel && sel.has(p.id) ? 'sel' : '', onclick: () => formPendiente(p) },
+        const tr = h('tr', { class: (sel && sel.has(p.id) ? 'sel ' : '') + (venc ? 'pend-venc' : ''), onclick: () => formPendiente(p) },
           chk,
           h('td', { class: 'num muted' }, eq.id || '—'),
           h('td', { class: 'mono' }, p.inv), h('td', { class: 'muted' }, eq.carpeta || '—'), h('td', {}, p.equipo || '—'), h('td', { class: 'muted' }, TIPO_PENDIENTE[p.tipo] || p.tipo),
