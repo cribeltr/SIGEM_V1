@@ -1,25 +1,16 @@
 # Inventario funcional — Gestión Equipos Críticos HHHA
 
-Panorama de lo que hace el programa hoy. La interfaz es un **panel de consulta**
-(Resumen · Datos · Ficha) con un diseño oscuro y enfocado en *leer y entender* el
-parque de equipos. El motor (`src/hhha-core.js`) concentra los datos y las reglas;
-la interfaz (`ui/app.js`) los **presenta** (no edita ni sincroniza desde la UI).
+Panorama completo de **todo** lo que hace el programa hoy (tras la revisión y
+corrección de la Fase 2). El motor (`src/hhha-core.js`) concentra los datos y
+las reglas; la interfaz (`ui/app.js`) solo presenta y opera sobre él.
 
 ## 0. Arquitectura y build
 - **Fuente** → `src/seed-data.js` (semilla), `src/hhha-core.js` (motor, sin DOM),
-  `ui/styles.css` (diseño del panel), `ui/app.js` (presentación) y
-  `ui/vendor/chart.umd.js` (Chart.js 4.4.1, gráficos del Resumen, offline).
-  `tools/build.js` inlina todo en `app.html` (navegador) y
-  `apps-script/Index.html` (**idéntico**, para Apps Script).
-- **Cómo se nutre el panel**: `ui/app.js` arranca el motor (semilla + estado en
-  `localStorage`) y construye, desde el estado real, las mismas "hojas" del
-  cuaderno (Inventario, Pendientes, Bitácora, Registro, etc.); el panel trabaja
-  sobre esas hojas. Así los KPIs, gráficos, tablas y fichas reflejan el estado
-  recalculado por el motor (no un volcado estático escrito a mano).
-- **Backend**: `apps-script/Code.gs` sigue **sirviendo** el HTML como Web App. Su
-  API de sincronización (apiSave/apiRead/Drive) queda disponible pero el panel
-  actual, al ser de solo consulta, **no la usa**.
-- **Persistencia**: `localStorage` (comprimido LZ). El panel no escribe cambios.
+  `ui/styles.css`, `ui/app.js` (vistas). `tools/build.js` inlina todo en
+  `app.html` (navegador) y `apps-script/Index.html` (idéntico, para Apps Script).
+- **Backend opcional**: `apps-script/Code.gs` (Web App de Google Sheets + Drive).
+- **Persistencia**: `localStorage` (comprimido LZ) y, si se conecta, Google Sheet
+  (estado oculto comprimido `_SIGEM_DATA` + hojas legibles regeneradas en cada sync).
 
 ## 1. Modelo de datos (`state`)
 - **equipos[]**: `inv` (clave), `id` (correlativo estable), `equipo, fam, servicio,
@@ -67,11 +58,7 @@ la interfaz (`ui/app.js`) los **presenta** (no edita ni sincroniza desde la UI).
 - **MP del mes**: `ejecutada` (Si) / `reprogramada` (C1–C8) / `otro` (FS/NU/Baja/No) /
   `pendiente`; clase `oficial|borrador|reprog|otro|noreg`.
 
-## 4. Operaciones (capacidades del motor)
-> El **motor** conserva todas estas operaciones de escritura; el **panel actual no
-> las expone** (es de solo consulta). Se documentan porque siguen disponibles en
-> `src/hhha-core.js` y son la base de los datos que el panel presenta.
-
+## 4. Operaciones (acciones que ejecuta el usuario)
 **Mantención preventiva**
 - `registrarMP` (MP rápida): valida ejecutor; avisa si el mes no estaba programado;
   nace **borrador**; aplica efectos; **fija el responsable del mes** = ejecutor.
@@ -116,42 +103,52 @@ la interfaz (`ui/app.js`) los **presenta** (no edita ni sincroniza desde la UI).
   coincide), **mantener_programa** (conserva la app y oficializa si coincide),
   **posponer**. equipo_nuevo→alta, equipo_faltante→baja.
 
-## 6. Vistas (panel de consulta)
-Cabecera fija: marca, navegación en "píldora" (3 vistas) y total de equipos.
-Diseño oscuro, acento cian, tipografía Spline Sans (respaldo `system-ui`).
+## 6. Vistas (interfaz)
+- **Inicio** (pantalla simple del día): bloque **Registrar** (botones directos de
+  eventos + cargar maestro), **Pendientes** priorizados (regla de 3 días, acciones
+  rápidas), **tarea de asignación del mes** y **aviso de pendientes sin delegar**.
+- **Ficha de equipo** (3 pestañas): **Mantención** (matriz P/R/Responsable editable +
+  observaciones), **Historial** (ciclo + pendientes + bitácora en línea de tiempo),
+  **Archivos** (adjuntos Drive + notas + contactos del servicio). Cabecera con datos
+  plegables, banner de estado/última gestión y avisos de conflicto.
+- **Equipos** (tabla con filtros tipo Excel, selección múltiple, exportar),
+  **Tablero** (kanban: por estado / pendientes / correctivos por etapa con
+  estancamiento y "siguiente paso"), **Pendientes** (gestión completa con filtros),
+  **Eventos/Bitácora**, **MP del mes** (asignación), **Cumplimiento** (por servicio /
+  responsable / mes con tendencia), **Tiempos de resolución** (`analisisTiempos`: días de
+  cierre creación→cierre por responsable y tipo + envejecimiento de lo abierto en tramos
+  ≤7/8–14/15–30/+30 días), **Recordatorios y escalamiento** (resumen semanal por
+  responsable con recordar en lote + escalar al Jefe CCRR por correo desde la agenda
+  cuando un pendiente pasa 14 días sin avance), **Contactos**, **Panel de control**
+  (consola densa de alertas, bajo demanda), **Configuración**.
+- Barra superior minimalista: marca + **búsqueda global (⌘K)** + **Grabar** + menú
+  "Más" + tema + configuración. Densidad/tema, atajos de teclado, command palette.
 
-- **Resumen** (portada): 6 **KPIs** (equipos totales, operativos, no operativos, en
-  servicio técnico, vida útil vencida + críticos ≤2 años, pendientes abiertos), dos
-  **gráficos Chart.js** (dona "estado del parque" y barras "resultado de mantenciones"
-  de la bitácora) y dos **tablas de alerta** (equipos *no operativos* y *en servicio
-  técnico*, ordenadas por días sin gestión; clic en una fila → ficha del equipo).
-- **Datos**: navegador de **hojas** (Inventario, Pendientes, Tareas, Tareas-Pendientes,
-  Bitácora, Registro, Equipos en servicio técnico, Equipos no operativos, Asignaciones
-  MP, Contactos) con conteo por hoja, **buscador global**, **filtros por columna tipo
-  Excel** (multiselección con conteos, orden A–Z/Z–A, filtros activos como chips),
-  **paginación** (60 filas) y **exportar CSV** de lo filtrado. El N° de inventario es
-  un enlace → ficha.
-- **360 Ficha**: **buscador** por n° inventario, equipo, marca, modelo o servicio
-  (con sugerencias y teclado ↑/↓/Enter) + accesos rápidos a equipos con más actividad.
-  Abre una **ficha unificada**: cabecera con estado, grilla de datos del inventario
-  (con realce de vida útil residual), **línea de tiempo de la bitácora** y lista de
-  **pendientes**. Botón **Imprimir ficha** (hoja limpia para impresión).
+## 7. Sincronización, exportación e importación
+- **Google Sheet** (`Code.gs`): `apiSave` (estado comprimido + hojas legibles),
+  `apiRead`, Drive (subir/listar/eliminar adjuntos por equipo). Hojas regeneradas:
+  Inicio, Inventario, Pendientes, Tareas, Tareas-Pendientes, Bitácora, Registro
+  (por fecha de creación), Equipos en servicio técnico, Equipos no operativos,
+  Contactos. Limpieza de hojas huérfanas (lista blanca, incluidas Actividad/Uso).
+- **Excel** (libro multi-hoja) y exportes por vista (respetan el filtro).
+- **Plantilla MP** (descargar/subir) · **Importar maestro** `.xlsx/.xlsm`.
+- **Respaldo JSON** (descargar/importar; oculto cuando hay Sheet conectado).
+- **Importación**: `importarBackup` (migración no destructiva; fusiona telemetría).
+- **Caché local lleno** (`save`): poda conflictos resueltos; si persiste el fallo **con
+  auto-sync al Sheet**, no alarma (la planilla es el respaldo) y sigue guardando; **sin
+  conexión** avisa para descargar respaldo. El recordatorio periódico de backup solo
+  aparece sin Sheet conectado.
 
-## 7. Datos, exportación y despliegue
-- **Fuente de datos del panel**: el estado del motor (semilla embebida + cambios en
-  `localStorage`), transformado a las hojas del cuaderno. Es una **instantánea**: para
-  reflejar datos nuevos se reconstruye el archivo (`node tools/build.js`) con una
-  semilla actualizada. *(Posible mejora futura: leer en vivo desde el Sheet en el
-  despliegue de Apps Script, manteniéndolo de solo lectura.)*
-- **Exportar CSV** por hoja desde la vista **Datos** (respeta filtros y orden).
-- **Despliegue**: abrir `app.html` directo en el navegador, o pegar
-  `apps-script/Index.html` en un proyecto de Apps Script y publicarlo como Web App
-  (`Code.gs` → `doGet` sirve `Index`). Funciona **offline** (todo va inline).
-
-## 8. (Reservado)
-- La grabación de sesión y la sincronización en vivo pertenecían a la interfaz
-  operativa anterior. El motor conserva sus capacidades; el panel de consulta actual
-  no las expone.
+## 8. Grabación de sesión (a demanda)
+- Botón **Grabar/Detener** en la barra. Mientras graba, registra **pantallas, clics,
+  formularios abiertos, campos completados** (solo la *etiqueta*, nunca el valor),
+  **búsquedas (⌘K), resultados/avisos y errores** de ejecución (no persiste en estado
+  ni en el Sheet; no captura datos sensibles).
+- Al **Detener** exporta un `.xlsx` con dos hojas: **Resumen** (duración, conteos,
+  **tiempo por pantalla**, **pausas más largas** —dónde se detuvo—, acciones realizadas,
+  formularios abiertos, búsquedas, pantallas visitadas y errores) y **Pasos** (cada
+  evento con Δ de tiempo, tipo, pantalla, n° inv., categoría y detalle, con autofiltro)
+  para analizar el flujo de trabajo real, medir tiempos y detectar fricción/errores.
 
 ## 9. Invariantes garantizadas (verificadas en Fase 2)
 1. `equipo.estado` siempre **== recalculado** desde sus eventos (determinista).
