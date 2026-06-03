@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.9';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.0';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -1999,10 +1999,19 @@
   function popover(anchor, items) {
     pop && pop.remove();
     const r = anchor.getBoundingClientRect();
-    pop = h('div', { class: 'cmdk', style: { position: 'fixed', top: (r.bottom + 4) + 'px', left: 'auto', right: (window.innerWidth - r.right) + 'px', transform: 'none', width: '180px' } },
+    pop = h('div', { class: 'cmdk', style: { position: 'fixed', visibility: 'hidden', top: '0px', left: '0px', transform: 'none', width: '180px' } },
       h('div', { class: 'cmdk-list' }, ...items.map(([lbl, fn, cls]) => h('div', { class: 'cmdk-item', onclick: () => { pop.remove(); pop = null; fn(); } }, h('span', { class: 'c-main' }, h('span', { class: 'c-title', style: cls === 'danger' ? { color: 'var(--noop)' } : null }, lbl))))));
     document.body.appendChild(pop);
+    clampPop(pop, r);
     setTimeout(() => document.addEventListener('click', closePop), 0);
+  }
+  // Reubica un popover ya insertado para que NO se salga del viewport (lo mide).
+  function clampPop(el, r) {
+    const pw = el.offsetWidth || 180, ph = el.offsetHeight || 200;
+    let left = Math.min(Math.max(8, r.right - pw), window.innerWidth - pw - 8);
+    let top = r.bottom + 4;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 4);
+    el.style.left = left + 'px'; el.style.right = 'auto'; el.style.top = top + 'px'; el.style.visibility = '';
   }
   function closePop() { pop && pop.remove(); pop = null; document.removeEventListener('click', closePop); document.removeEventListener('mousedown', closePop); }
 
@@ -2087,10 +2096,9 @@
   // Posiciona un panel flotante bajo el ancla; cierra al hacer clic fuera (no dentro).
   function placePanel(panel, anchor) {
     const r = anchor.getBoundingClientRect();
-    panel.style.position = 'fixed';
-    panel.style.top = (r.bottom + 4) + 'px';
-    panel.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    panel.style.position = 'fixed'; panel.style.visibility = 'hidden'; panel.style.top = '0px'; panel.style.left = '0px';
     pop = panel; document.body.appendChild(panel);
+    clampPop(panel, r);   // mide y recorta al viewport (no se sale por izquierda ni abajo)
     panel.addEventListener('mousedown', e => e.stopPropagation());
     setTimeout(() => document.addEventListener('mousedown', closePop), 0);
   }
