@@ -2776,7 +2776,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.2';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.3';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3500,16 +3500,18 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     function renderMes(list) {
       const rows = [];
       list.forEach(e => { if (e.estado === 'baja') return; for (let i = 0; i < 12; i++) if (H.mpProgramadaEnMes(e, MESES[i])) rows.push({ e, i }); });
-      countNote.textContent = `${rows.length} fila(s) · ${new Set(rows.map(r => r.e.inv)).size} equipo(s)`;
+      const CAP = 500, capped = rows.length > CAP, shown = rows.slice(0, CAP);
+      countNote.textContent = `${rows.length} fila(s) · ${new Set(rows.map(r => r.e.inv)).size} equipo(s)` + (capped ? ` · mostrando ${CAP}` : '');
       const TH = lbl => h('th', {}, h('span', { class: 'th-lbl' }, lbl));
       const resCell = (e, i) => { const r = H.resultadoMPMes(e, YEAR, i); if (!r) return h('span', { class: 'pill st' }, 'Pendiente'); if (r === 'Si') return h('span', { class: 'pill op' }, 'Sí'); if (r === 'Baja') return h('span', { class: 'pill baja' }, 'Baja'); if (r === 'No') return h('span', { class: 'faint' }, 'No'); return h('span', { class: 'pill noop' }, r); };
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {}, ['ID', 'N° Inv.', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Freq', 'Mes', 'Tipo', 'Resultado'].map(TH))),
-        h('tbody', {}, ...rows.map(({ e, i }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
+        h('tbody', {}, ...shown.map(({ e, i }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
           h('td', { class: 'num muted' }, e.id), h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(180, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
           h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
-          h('td', { class: 'muted' }, e.freq || '—'), h('td', {}, MES_ESP(i)), h('td', { class: 'mono' }, (e.prog || {})[MESES[i]] || '—'), h('td', {}, resCell(e, i)))))));
-      kbList = { rows: rows.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
+          h('td', { class: 'muted' }, e.freq || '—'), h('td', {}, MES_ESP(i)), h('td', { class: 'mono' }, (e.prog || {})[MESES[i]] || '—'), h('td', {}, resCell(e, i)))),
+          capped ? h('tr', {}, h('td', { colspan: '11', style: { textAlign: 'center', padding: '10px', color: 'var(--muted)', fontSize: '12px' } }, `Mostrando ${CAP} de ${rows.length} filas — filtra por servicio/estado o usa Exportar para verlas todas.`)) : null)));
+      kbList = { rows: shown.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
 
