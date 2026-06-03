@@ -2778,7 +2778,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.10';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.11';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2859,7 +2859,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     { id: 'equipos', label: 'Equipos', icon: 'equipos' },
     { id: 'pendientes', label: 'Pendientes', icon: 'pendientes' }
   ];
-  let view = 'inicio', params = {}, fichaOrigen = 'equipos';
+  let view = 'equipos', params = {}, fichaOrigen = 'equipos';
   let kbList = null; // {rows, open, idx} para navegación j/k
   let suppressHash = false; // ignora el hashchange que dispara el propio go() (preserva params en memoria)
 
@@ -2964,7 +2964,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
   function fromHash() {
     const m = (location.hash || '').replace(/^#/, '').split('/');
-    const v = m[0] || 'inicio';
+    const v = m[0] || 'equipos';
     // Cualquier vista registrada es navegable por hash, esté o no en el menú
     // (p. ej. equipo, ciclos, asignaciones, configuración).
     if (VIEWS[v]) { view = v; params = m[1] ? { inv: decodeURIComponent(m[1]) } : {}; }
@@ -3091,7 +3091,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       mount(caidosWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
           h('th', {}, 'N° Inv.'), h('th', {}, 'Equipo'), h('th', {}, 'Servicio'), h('th', {}, 'Estado'),
-          h('th', { class: 'num' }, 'Días en estado'), h('th', {}, 'Última gestión'), h('th', { class: 'num' }, 'Días s/gestión'), h('th', {}, 'Detalle'), h('th', { class: 'shrink' }, ''))),
+          h('th', { class: 'num' }, 'Días en estado'), h('th', {}, 'Última gestión'), h('th', { class: 'num' }, 'Días sin gestión'), h('th', {}, 'Detalle'), h('th', { class: 'shrink' }, ''))),
         h('tbody', {}, ...list.map(({ e, dias, g, sinG }) => h('tr', { style: { cursor: 'pointer' }, onclick: () => go('equipo', { inv: e.inv }) },
           h('td', { class: 'mono' }, e.inv), h('td', {}, e.equipo || '—'), h('td', { class: 'muted' }, e.servicio || '—'),
           h('td', {}, estadoPill(e.estado)),
@@ -3104,7 +3104,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const segCaidos = h('div', { class: 'seg', title: 'Ordenar la tabla' }, ...[['estado', 'Días en estado'], ['gestion', 'Días sin gestión']].map(([v, l]) =>
       h('button', { class: ordenCaidos === v ? 'on' : '', onclick: e => { ordenCaidos = v; [...segCaidos.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); renderCaidos(); } }, l)));
     if (caidos.length) renderCaidos();
-    const expCaidos = h('button', { class: 'btn sm', title: 'Exportar a Excel', onclick: () => { const list = caidos.slice().sort(ordenCaidos === 'gestion' ? (a, b) => sgVal(b) - sgVal(a) : (a, b) => b.dias - a.dias); exportTablaExcel('Equipos caídos', 'Equipos caídos (no operativos y en servicio técnico) · ' + H.hoyLocal(), ['N° Inv.', 'Equipo', 'Servicio', 'Estado', 'Días en estado', 'Última gestión', 'Días s/gestión', 'Detalle gestión', 'Encargado'], list.map(({ e, dias, g, sinG }) => [e.inv, e.equipo || '', e.servicio || '', ESTADO_LABEL[e.estado] || e.estado, dias, g ? fmtFecha(g.fecha) : '', sinG == null ? '' : sinG, g ? g.texto : 'sin gestión', H.encargadoDe(e) || '']), `HHHA_equipos_caidos_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar');
+    const expCaidos = h('button', { class: 'btn sm', title: 'Exportar a Excel', onclick: () => { const list = caidos.slice().sort(ordenCaidos === 'gestion' ? (a, b) => sgVal(b) - sgVal(a) : (a, b) => b.dias - a.dias); exportTablaExcel('Equipos caídos', 'Equipos caídos (no operativos y en servicio técnico) · ' + H.hoyLocal(), ['N° Inv.', 'Equipo', 'Servicio', 'Estado', 'Días en estado', 'Última gestión', 'Días sin gestión', 'Detalle gestión', 'Encargado'], list.map(({ e, dias, g, sinG }) => [e.inv, e.equipo || '', e.servicio || '', ESTADO_LABEL[e.estado] || e.estado, dias, g ? fmtFecha(g.fecha) : '', sinG == null ? '' : sinG, g ? g.texto : 'sin gestión', H.encargadoDe(e) || '']), `HHHA_equipos_caidos_${H.hoyLocal()}.xlsx`); } }, svg(ic.dl, 14), 'Exportar');
     root.appendChild(h('div', { class: 'section' },
       h('div', { class: 's-hd' }, h('h3', {}, 'Equipos caídos'),
         h('span', { class: 's-sub' }, `${noop.length} no operativos · ${st.length} en servicio técnico`),
@@ -3497,7 +3497,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
         h('thead', {}, h('tr', {},
           h('th', { class: 'shrink' }, allChk),
           th('id', 'ID', 'num', e => String(e.id)),
-          th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('serie', 'Serie', '', e => e.serie),
+          th('inv', 'N° Inv.', '', e => e.inv), th('carpeta', 'N° Carpeta', '', e => e.carpeta || '—'), th('equipo', 'Equipo', '', e => e.equipo), th('serie', 'Serie', '', e => e.serie),
           th('servicio', 'Servicio', '', e => e.servicio), th('unidad', 'Unidad', '', e => e.unidad), th('ubic', 'Ubicación', '', e => e.ubic),
           th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado),
           ...(down
@@ -3509,7 +3509,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
           const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
             h('td', { onclick: ev => ev.stopPropagation() }, chk),
             h('td', { class: 'num muted' }, e.id),
-            h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
+            h('td', { class: 'mono' }, e.inv), h('td', { class: 'mono muted' }, e.carpeta || '—'), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
             h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
             h('td', {}, estadoPill(e.estado)),
             ...(down
@@ -3583,8 +3583,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     return root;
   };
   function exportarEquipos(list) {
-    const header = ['ID', 'N° Inv.', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Estado', 'Freq MP', 'Tiempo en estado (días)', 'Última actualización', 'Encargado', 'Pend. abiertos'];
-    const rows = list.map(e => { const g = H.ultimaGestion(e.inv); return [e.id, e.inv, e.equipo || '', e.serie || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', ESTADO_LABEL[e.estado] || e.estado, e.freq || '', H.diasEnEstado(e), g ? fmtFecha(g.fecha) : '', H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length]; });
+    const header = ['ID', 'N° Inv.', 'N° Carpeta', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Estado', 'Freq MP', 'Tiempo en estado (días)', 'Última actualización', 'Encargado', 'Pend. abiertos'];
+    const rows = list.map(e => { const g = H.ultimaGestion(e.inv); return [e.id, e.inv, e.carpeta || '', e.equipo || '', e.serie || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', ESTADO_LABEL[e.estado] || e.estado, e.freq || '', H.diasEnEstado(e), g ? fmtFecha(g.fecha) : '', H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length]; });
     exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_equipos_${H.hoyLocal()}.xlsx`);
   }
   // Export "por mes": una fila por equipo y mes con MP programada (reproduce Eventos_MP).
@@ -3914,7 +3914,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     pendSel = new Set();
     const cf = colFilters(render);
     const servicios = [...new Set(S.pendientes.map(p => p.servicio).filter(Boolean))].sort();
-    let vmode = 'cards'; const wrap = h('div', {}); const note = h('span', { class: 'count-note' });
+    let vmode = 'tabla'; const wrap = h('div', {}); const note = h('span', { class: 'count-note' });
     const cargaBox = h('div', {}); const bulkBar = h('div', { class: 'filterbar', style: { display: 'none', background: 'var(--accent-bg)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' } });
 
     // Conjunto base (estado/vencidos/tipo/servicio) sin el filtro de responsable — para la carga.
@@ -5052,8 +5052,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       name: 'Inicio', hidden: false, headerRow: 0, rows: [
         ['Gestión Equipos Críticos HHHA · Datos sincronizados desde la aplicación'], ['Actualizado', hoy], [],
         ['Hojas de datos: Inventario · Pendientes · Tareas · Tareas-Pendientes (relación) · Bitácora · Registro (por fecha/hora de creación) · Equipos en servicio técnico · Equipos no operativos · Asignaciones MP · Contactos.'],
-        ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inv." (= "N° Inventario" de Inventario).'],
-        ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREAS.'],
+        ['ID_EQUIPO es un correlativo estable de Inventario. La unión entre hojas se hace por "N° Inventario" (el mismo número se repite en todas las hojas).'],
+        ['Tareas-Pendientes une ID_PENDIENTE con ID_TAREA.'],
         ['Las hojas de sistema (empiezan con "_") están ocultas: guardan el estado. No las borres ni edites.'], [],
         ['LEYENDA · RESULTADO MP'], ['Si', 'MP realizada'],
         ...Object.keys(CAUSALES).map(k => [k, CAUSALES[k].desc]), ['FS', 'Fuera de servicio'], ['NU', 'No ubicado'], ['Baja', 'Dado de baja'], ['No', 'No realizada'],
@@ -5064,7 +5064,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     // INVENTARIO (ID_EQUIPO = N° Inventario: clave de unión con "N° Inv." de las demás hojas)
     sheets.push({
       name: 'Inventario', hidden: false, rows: [
-        ['ID_EQUIPO', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año Instalación', 'Vida Útil Residual', 'Clasificación', 'ENU / Baja'],
+        ['ID_EQUIPO', 'N° Carpeta', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Procedencia', 'Marca', 'Modelo', 'Serie', 'Año de instalación', 'Vida útil residual (años)', 'Clasificación', 'Situación'],
         ...S.equipos.map(e => [e.id, e.carpeta || '', e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.ubic || '', e.proc || '', e.marca || '', e.modelo || '', e.serie || '', e.ano || '', e.vur || '', e.clasif || '', e.estado === 'baja' ? 'Baja' : 'En uso'])
       ]
     });
@@ -5072,7 +5072,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     // PENDIENTES
     sheets.push({
       name: 'Pendientes', hidden: false, rows: [
-        ['ID_PENDIENTE', 'N° Inv.', 'N° Carpeta', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Compromiso', 'Última actualización'],
+        ['ID_PENDIENTE', 'N° Inventario', 'N° Carpeta', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Fecha compromiso', 'Última actualización'],
         ...pendVivos.map(p => { const eq = H.findEquipo(p.inv) || {}; const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean); const u = [p.fechaCrea, ...fs, p.fechaCierre].filter(Boolean).sort().pop(); return [p.id, p.inv, eq.carpeta || '', p.equipo || eqNom(p.inv), TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fF(p.fechaComp), u ? fF(u) : '']; })
       ]
     });
@@ -5081,7 +5081,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const tareasVivas = (S.tareas || []).filter(t => pendById[t.pendId]);
     sheets.push({
       name: 'Tareas', hidden: false, rows: [
-        ['ID_Tareas', 'N° Inv.', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Compromiso'],
+        ['ID_TAREA', 'N° Inventario', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Fecha compromiso'],
         ...tareasVivas.map(t => { const p = pendById[t.pendId] || {}; return [t.id, t.inv, t.equipo || eqNom(t.inv), TIPO_PENDIENTE[p.tipo] || p.tipo || '', t.desc || '', p.ejecutor || '', t.estado === 'cerrado' ? 'Hecha' : 'Pendiente', fF(p.fechaComp)]; })
       ]
     });
@@ -5089,7 +5089,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     // RELACIÓN Tareas ↔ Pendientes (tabla puente)
     sheets.push({
       name: 'Tareas-Pendientes', hidden: false, rows: [
-        ['ID_PENDIENTE', 'ID_TAREAS'],
+        ['ID_PENDIENTE', 'ID_TAREA'],
         ...tareasVivas.map(t => [t.pendId, t.id])
       ]
     });
@@ -5097,7 +5097,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     // BITÁCORA (todos los eventos vigentes + su detalle correctivo)
     sheets.push({
       name: 'Bitácora', hidden: false, rows: [
-        ['ID_BITACORA', 'Fecha del evento', 'Fecha registro', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe Folio Solicitud de trabajo', 'N° Envío', 'N° OC', 'N° Cotización', 'Empresa', 'Técnico', 'Observación', 'Oficial'],
+        ['ID_BITACORA', 'Fecha del evento', 'Fecha registro', 'N° Inventario', 'Equipo', 'Servicio', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe / Folio', 'N° Envío', 'N° OC', 'N° Cotización', 'Empresa', 'Técnico', 'Observación', 'Oficial'],
         ...S.eventos.filter(e => !e.anulado).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.id - a.id)).map(e => [e.id, fF(e.fecha), fF(e.fechaReg), e.inv, e.equipo || eqNom(e.inv), e.servicio || eqSrv(e.inv), H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.nEnvio || '', e.nOC || '', e.nCotiz || '', e.empresa || '', e.tecnico || '', e.obs || '', e.oficial || 'No'])
       ]
     });
@@ -5107,7 +5107,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     const creado = e => { if (e.ts) { const d = new Date(e.ts); if (!isNaN(d)) return d.toLocaleString('es-CL'); } return fF(e.fechaReg) || fF(e.fecha) || ''; };
     sheets.push({
       name: 'Registro', hidden: false, rows: [
-        ['Creado', 'ID_BITACORA', 'N° Inv.', 'Equipo', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe / Folio', 'Observación'],
+        ['Fecha de creación', 'ID_BITACORA', 'N° Inventario', 'Equipo', 'Tipo', 'Resultado', 'Estado equipo', 'Ejecutor', 'N° Informe / Folio', 'Observación'],
         ...S.eventos.filter(e => !e.anulado)
           .slice().sort((a, b) => (tsKey(b)).localeCompare(tsKey(a)) || (b.id - a.id))
           .map(e => [creado(e), e.id, e.inv, e.equipo || eqNom(e.inv), H.etiquetaTipoEvento(e), e.resultado || '', e.estado || '', e.ejecutor || '', e.folio || '', e.obs || ''])
@@ -5115,7 +5115,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     });
 
     // EQUIPOS por estado de atención (seguimiento de caídos)
-    const colsEstado = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Días en estado', 'Desde', 'Última gestión', 'Días s/gestión', 'Detalle gestión', 'Encargado', 'Pend. abiertos', 'N° Informe / Folio', 'Apertura ciclo'];
+    const colsEstado = ['N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Días en estado', 'En estado desde', 'Última gestión', 'Días sin gestión', 'Detalle gestión', 'Encargado', 'Pendientes abiertos', 'N° Informe / Folio', 'Apertura del ciclo'];
     const filasEstado = est => S.equipos.filter(e => e.estado === est).map(e => {
       const ciclo = H.ciclosAbiertosDe(e.inv)[0];
       const g = H.ultimaGestion(e.inv);
