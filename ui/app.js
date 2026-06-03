@@ -122,7 +122,10 @@
       notify: (m, t, a) => toast(m, t, a),
       confirm: (m) => window.confirm(m),
       prompt: (m) => window.prompt(m),
-      onChange: () => { scheduleRefresh(); scheduleCloudPush(); }
+      onChange: () => { scheduleRefresh(); scheduleCloudPush(); },
+      // El motor lo usa para decidir si un caché local lleno es crítico:
+      // con auto-sync al Sheet, la planilla es el respaldo real.
+      cloudConnected: () => !!(Cloud.auto && Cloud.connected)
     },
     env: { xlsx: window.XLSX || null }
   });

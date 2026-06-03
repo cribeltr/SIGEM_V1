@@ -34,7 +34,8 @@
     confirm: function (/* msg */) { return true; },   // antes: window.confirm(...)
     alert: function (/* msg */) {},                   // antes: window.alert(...)
     prompt: function (/* msg */) { return null; },    // antes: window.prompt(...)
-    onChange: function () {}                           // antes: navigate()/refreshNav()/refreshStateIndicator()
+    onChange: function () {},                          // antes: navigate()/refreshNav()/refreshStateIndicator()
+    cloudConnected: function () { return false; }      // true si hay auto-sync al Sheet (respaldo real)
   };
 
   // Entorno. Permite correr fuera del navegador (Node) inyectando shims.
@@ -239,6 +240,7 @@
     return cambios;
   }
 
+  let _cacheLlenoAvisado = false;   // evita repetir el aviso de caché lleno (cuando hay Sheet conectado)
   function persistirState() {
     // Devuelve {ok, bytes, error}.
     try {
@@ -266,20 +268,33 @@
       if (resCount > 0) {
         state.conflictos = state.conflictos.filter(c => !(c.estado || '').startsWith('resuelto'));
         res = persistirState();
-        if (res.ok) {
+        if (res.ok && !UI.cloudConnected()) {
           UI.notify(`Almacenamiento liberado: ${resCount} conflictos resueltos podados del historial. Tu backup JSON los conserva.`, 'warn-backup',
             { label: 'Descargar backup', run: exportarBackupJSON });
         }
       }
     }
     if (!res.ok) {
-      // Intento 2: avisar para exportar
+      if (UI.cloudConnected()) {
+        // Conectado con auto-sync: el Google Sheet ES el respaldo, así que un caché local
+        // lleno NO es crítico. Se continúa y onChange() empuja al Sheet. Aviso calmado una
+        // sola vez (no la alarma "descarga backup AHORA", que aquí sería innecesaria).
+        if (!_cacheLlenoAvisado) {
+          _cacheLlenoAvisado = true;
+          UI.notify('Caché del navegador lleno: se sigue trabajando y guardando en Google Sheets (tus datos están a salvo en la planilla).', 'warn-backup');
+        }
+        UI.onChange();
+        return;
+      }
+      // Sin conexión: localStorage es el ÚNICO almacén → alarma para respaldar.
       UI.notify('Almacenamiento del navegador lleno. Descarga el backup AHORA antes de seguir.', 'error',
         { label: 'Descargar', run: exportarBackupJSON });
       return;
     }
-    // Recordatorio de backup cada N cambios reales del usuario
-    if (!isInternal && state.__userActions > 0 && state.__userActions % 10 === 0) {
+    _cacheLlenoAvisado = false;   // persistió bien: se rearma el aviso si vuelve a llenarse
+    // Recordatorio de backup cada N cambios reales del usuario (solo SIN Sheet conectado:
+    // con auto-sync el respaldo es automático y no hace falta insistir).
+    if (!isInternal && !UI.cloudConnected() && state.__userActions > 0 && state.__userActions % 10 === 0) {
       UI.notify(`Llevas ${state.__userActions} cambios. Recuerda descargar backup.`, 'warn-backup',
         { label: 'Descargar', run: exportarBackupJSON });
     }
