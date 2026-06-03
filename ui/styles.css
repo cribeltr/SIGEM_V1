@@ -544,7 +544,8 @@ table.dense thead th:hover .funnel { opacity: .55; }
   .topbar .s-hide { display: none; }
   .view { padding: 10px 9px 36px; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
-  .search-pill { min-width: 0; }
+  .search-pill, .search-pill.big { min-width: 0; flex-basis: 0; }
+  .search-pill .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .drawer, .drawer.wide { width: 100%; max-width: 100%; }
   .pend-card { flex-direction: column; align-items: stretch; gap: 8px; }
   .pc-actions { justify-content: flex-end; }
