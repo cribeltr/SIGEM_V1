@@ -2776,7 +2776,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v2.8';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.9';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2861,7 +2861,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     { id: 'cumplimiento', label: 'Cumplimiento', icon: 'cumplimiento' },
     { id: 'eventos', label: 'Eventos', icon: 'eventos' }
   ];
-  let view = 'inicio', params = {};
+  let view = 'inicio', params = {}, fichaOrigen = 'equipos';
   let kbList = null; // {rows, open, idx} para navegación j/k
   let suppressHash = false; // ignora el hashchange que dispara el propio go() (preserva params en memoria)
 
@@ -2935,6 +2935,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
 
   function go(v, p) {
+    if (v === 'equipo' && view !== 'equipo') fichaOrigen = view;   // recordar de dónde se abrió la ficha (para "Volver")
     view = v; params = p || {}; kbList = null;
     const newHash = '#' + v + (p && p.inv ? '/' + encodeURIComponent(p.inv) : '');
     if (location.hash !== newHash) { suppressHash = true; location.hash = newHash; }
@@ -3601,7 +3602,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
     return h('div', { class: 'view-narrow' },
       h('div', { style: { marginBottom: '10px', fontSize: '12px' } },
-        h('span', { class: 'link', onclick: () => go('equipos') }, '← Equipos')),
+        h('span', { class: 'link', onclick: () => go(fichaOrigen || 'equipos') }, '← ' + (TIT_VISTA[fichaOrigen] ? 'Volver a ' + TIT_VISTA[fichaOrigen] : 'Volver'))),
       head, banner, avisoConf, tabs, body);
   };
   // Gestiones y seguimientos registrados (lo que se anota con "Registrar gestión"
