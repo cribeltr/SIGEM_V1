@@ -2776,7 +2776,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.6';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.7';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3563,9 +3563,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     return root;
   };
   function exportarEquipos(list) {
-    const estLbl = { ejecutada: 'Ejecutada', reprogramada: 'Reprogramada', otro: 'Otro', pendiente: 'Pendiente' };
-    const header = ['N° Inv.', 'Equipo', 'Servicio', 'Unidad', 'Familia', 'Marca', 'Modelo', 'Serie', 'Freq MP', 'Estado', 'Días', 'Encargado', 'Pend. abiertos', `MP ${MES_ESP(MONTH)}`];
-    const rows = list.map(e => [e.inv, e.equipo || '', e.servicio || '', e.unidad || '', e.fam || '', e.marca || '', e.modelo || '', e.serie || '', e.freq || '', ESTADO_LABEL[e.estado] || e.estado, H.diasEnEstado(e), H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length, estLbl[H.mpEstadoMes(e, YEAR, MONTH)] || '']);
+    const header = ['ID', 'N° Inv.', 'Equipo', 'Serie', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Estado', 'Freq MP', 'Tiempo en estado (días)', 'Última actualización', 'Encargado', 'Pend. abiertos'];
+    const rows = list.map(e => { const g = H.ultimaGestion(e.inv); return [e.id, e.inv, e.equipo || '', e.serie || '', e.servicio || '', e.unidad || '', e.ubic || '', e.marca || '', e.modelo || '', ESTADO_LABEL[e.estado] || e.estado, e.freq || '', H.diasEnEstado(e), g ? fmtFecha(g.fecha) : '', H.encargadoDe(e) || '', H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length]; });
     exportTablaExcel('Equipos', 'Equipos (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_equipos_${H.hoyLocal()}.xlsx`);
   }
   // Export "por mes": una fila por equipo y mes con MP programada (reproduce Eventos_MP).
@@ -3977,8 +3976,9 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     render(); return root;
   };
   function exportarPendientes(list) {
-    const header = ['ID', 'N° Inv.', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Creado', 'Compromiso', 'Atraso (días)', 'Próx. recordatorio'];
-    const rows = list.map(p => { const at = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : ''; return [p.id, p.inv, p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fmtFecha(p.fechaCrea), fmtFecha(p.fechaComp), (at !== '' && at > 0 ? at : ''), fmtFecha(p.proxRecord)]; });
+    const header = ['ID_Pendiente', 'ID Equipo', 'N° Inv.', 'N° Carpeta', 'Equipo', 'Servicio', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Creado', 'Compromiso', 'Atraso (días)', 'Próx. recordatorio', 'Última actualización'];
+    const ultActP = p => { const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean); const all = [p.fechaCrea, ...fs, p.fechaCierre].filter(Boolean).sort(); return all[all.length - 1] || ''; };
+    const rows = list.map(p => { const eq = H.findEquipo(p.inv) || {}; const at = p.fechaComp && p.estado !== 'cerrado' ? H.diasEntreFechas(p.fechaComp, H.hoyLocal()) : ''; const u = ultActP(p); return [p.id, eq.id || '', p.inv, eq.carpeta || '', p.equipo || '', p.servicio || '', TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fmtFecha(p.fechaCrea), fmtFecha(p.fechaComp), (at !== '' && at > 0 ? at : ''), fmtFecha(p.proxRecord), u ? fmtFecha(u) : '']; });
     exportTablaExcel('Pendientes', 'Pendientes (vista filtrada) · ' + H.hoyLocal(), header, rows, `HHHA_pendientes_${H.hoyLocal()}.xlsx`);
   }
   function pendientesTable(list, opts) {
@@ -5049,8 +5049,8 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
     // PENDIENTES
     sheets.push({
       name: 'Pendientes', hidden: false, rows: [
-        ['ID_PENDIENTE', 'N° Inv.', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Compromiso'],
-        ...pendVivos.map(p => [p.id, p.inv, p.equipo || eqNom(p.inv), TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fF(p.fechaComp)])
+        ['ID_PENDIENTE', 'N° Inv.', 'N° Carpeta', 'Equipo', 'Tipo', 'Descripción', 'Responsable', 'Estado', 'Compromiso', 'Última actualización'],
+        ...pendVivos.map(p => { const eq = H.findEquipo(p.inv) || {}; const fs = (p.seguimientos || []).map(s => s.fecha).filter(Boolean); const u = [p.fechaCrea, ...fs, p.fechaCierre].filter(Boolean).sort().pop(); return [p.id, p.inv, eq.carpeta || '', p.equipo || eqNom(p.inv), TIPO_PENDIENTE[p.tipo] || p.tipo, p.desc || '', p.ejecutor || '', ESTADO_PEND_LABEL[p.estado] || p.estado, fF(p.fechaComp), u ? fF(u) : '']; })
       ]
     });
 
