@@ -2776,7 +2776,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.0';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.1';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -3454,6 +3454,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       list.sort((a, b) => {
         let va, vb;
         if (sortKey === 'mp') { va = H.mpEstadoMes(a, YEAR, MONTH); vb = H.mpEstadoMes(b, YEAR, MONTH); }
+        else if (sortKey === 'resultado') { va = H.resultadoMPMes(a, YEAR, MONTH) || ''; vb = H.resultadoMPMes(b, YEAR, MONTH) || ''; }
         else if (sortKey === 'pend') { va = H.pendientesDe(a.inv).filter(p => p.estado !== 'cerrado').length; vb = H.pendientesDe(b.inv).filter(p => p.estado !== 'cerrado').length; }
         else { va = (a[sortKey] || ''); vb = (b[sortKey] || ''); }
         return (typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'es', { numeric: true })) * sortDir;
@@ -3469,18 +3470,22 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
       mount(tblWrap, h('table', { class: 'dense' },
         h('thead', {}, h('tr', {},
           h('th', { class: 'shrink' }, allChk),
-          th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('servicio', 'Servicio', '', e => e.servicio),
-          th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado), th('fam', 'Familia', '', e => e.fam), th('freq', 'Freq', '', e => e.freq),
-          th('mp', `MP ${MES_ESP(MONTH)}`, '', mpMesLabel),
+          th('id', 'ID', 'num', e => String(e.id)),
+          th('inv', 'N° Inv.', '', e => e.inv), th('equipo', 'Equipo', '', e => e.equipo), th('serie', 'Serie', '', e => e.serie),
+          th('servicio', 'Servicio', '', e => e.servicio), th('unidad', 'Unidad', '', e => e.unidad), th('ubic', 'Ubicación', '', e => e.ubic),
+          th('estado', 'Estado', '', e => ESTADO_LABEL[e.estado] || e.estado), th('freq', 'Freq', '', e => e.freq),
+          th('mp', 'MP', '', mpMesLabel), th('resultado', 'Resultado', '', e => H.resultadoMPMes(e, YEAR, MONTH) || '—'), th('mes', 'Mes', '', e => MES_ESP(MONTH)),
           h('th', {}, h('span', { class: 'th-lbl' }, 'Encargado'), cf.btn('encargado', 'Encargado', e => H.encargadoDe(e) || 'sin asignar')),
           th('pend', 'Pend.', 'num', e => String(H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length)))),
         h('tbody', {}, ...list.map(e => {
           const chk = h('input', { type: 'checkbox', checked: eqSel.has(e.inv) ? true : false, onclick: ev => ev.stopPropagation(), onchange: ev => { ev.target.checked ? eqSel.add(e.inv) : eqSel.delete(e.inv); tr.classList.toggle('sel', ev.target.checked); updBulk(); } });
           const tr = h('tr', { class: eqSel.has(e.inv) ? 'sel' : '', onclick: () => go('equipo', { inv: e.inv }) },
             h('td', { onclick: ev => ev.stopPropagation() }, chk),
-            h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'muted' }, capCell(160, e.servicio || '—')),
-            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, capCell(130, e.fam || '—')), h('td', { class: 'muted' }, e.freq || '—'),
-            h('td', {}, mpMesBadge(e)),
+            h('td', { class: 'num muted' }, e.id),
+            h('td', { class: 'mono' }, e.inv), h('td', {}, capCell(200, e.equipo || '—')), h('td', { class: 'mono muted' }, e.serie || '—'),
+            h('td', { class: 'muted' }, capCell(150, e.servicio || '—')), h('td', { class: 'muted' }, capCell(140, e.unidad || '—')), h('td', { class: 'muted' }, capCell(140, e.ubic || '—')),
+            h('td', {}, estadoPill(e.estado)), h('td', { class: 'muted' }, e.freq || '—'),
+            h('td', {}, mpMesBadge(e)), h('td', { class: 'muted' }, H.resultadoMPMes(e, YEAR, MONTH) || '—'), h('td', { class: 'muted' }, MES_ESP(MONTH)),
             h('td', { class: H.encargadoDe(e) ? 'muted' : '', style: H.encargadoDe(e) ? null : { color: 'var(--st)' } }, capCell(140, H.encargadoDe(e) || 'sin asignar')),
             h('td', { class: 'num' }, (() => { const n = H.pendientesDe(e.inv).filter(p => p.estado !== 'cerrado').length; return n ? h('span', { class: 'pill st' }, n) : h('span', { class: 'faint' }, '0'); })()));
           return tr;
