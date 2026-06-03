@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.15';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.16';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -851,28 +851,26 @@
     }
     // Carta Gantt: una fila por equipo, columnas por mes. "Programado" muestra la programación (P);
     // "Programado vs realizado" añade, por mes, dos subcolumnas: Programación (P) y Resultado (R).
+    // gP/gR devuelven el VALOR (texto) que se muestra y por el que se filtra ("Sí" en vez de ✓).
+    function gP(e, i) { const p = (e.prog || {})[MESES[i]]; if (p) return p === 'X' ? 'Sí' : p; return H.mpProgramadaEnMes(e, MESES[i]) ? 'Sí' : ''; }
+    function gR(e, i) { const r = H.resultadoMPMes(e, YEAR, i); if (r) return r === 'Si' ? 'Sí' : r; return H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''; }
     function ganttP(e, i) {
-      const p = (e.prog || {})[MESES[i]];
-      const prog = p || H.mpProgramadaEnMes(e, MESES[i]);
-      if (!prog) return h('td', { class: 'g gp g-empty' }, '');
-      return h('td', { class: 'g gp g-prog', title: `${MES_ESP(i)} · ${e.equipo || e.inv}\nProgramado: ${p || 'sí'}\nResponsable: ${gEjec(e, i) || '—'}` }, p || 'P');
+      const v = gP(e, i);
+      if (!v) return h('td', { class: 'g gp g-empty' }, '');
+      return h('td', { class: 'g gp g-prog', title: `${MES_ESP(i)} · ${e.equipo || e.inv}\nProgramado: ${v}\nResponsable: ${gEjec(e, i) || '—'}` }, v);
     }
     function ganttR(e, i) {
-      const r = H.resultadoMPMes(e, YEAR, i);
-      const prog = H.mpProgramadaEnMes(e, MESES[i]);
-      const tip = `${MES_ESP(i)} · ${e.equipo || e.inv}\nResultado: ${r || '—'}\nResponsable: ${gEjec(e, i) || '—'}`;
-      if (!r) {
-        if (prog && i <= MONTH) return h('td', { class: 'g gr g-no', title: tip }, '✗');   // vencido sin realizar
-        if (prog) return h('td', { class: 'g gr g-pe', title: tip }, '·');                  // futuro pendiente
-        return h('td', { class: 'g gr g-empty' }, '');
-      }
-      let cls = 'g-re', txt = r;
-      if (r === 'Si') { cls = 'g-ok'; txt = '✓'; }
-      else if (/^C\d/.test(r)) cls = 'g-re';
-      else if (r === 'FS' || r === 'NU') cls = 'g-no';
-      else if (r === 'Baja') { cls = 'g-ba'; txt = 'Baja'; }
-      else if (r === 'No') { cls = 'g-pe'; txt = 'No'; }
-      return h('td', { class: 'g gr ' + cls, title: tip }, txt);
+      const v = gR(e, i);   // 'Sí' | 'C1'… | 'FS' | 'NU' | 'Baja' | 'No' | 'Pendiente' | ''
+      const tip = `${MES_ESP(i)} · ${e.equipo || e.inv}\nResultado: ${v || '—'}\nResponsable: ${gEjec(e, i) || '—'}`;
+      if (!v) return h('td', { class: 'g gr g-empty' }, '');
+      if (v === 'Pendiente') return h('td', { class: 'g gr ' + (i <= MONTH ? 'g-no' : 'g-pe'), title: tip }, i <= MONTH ? '✗' : '·');
+      let cls = 'g-re';
+      if (v === 'Sí') cls = 'g-ok';
+      else if (/^C\d/.test(v)) cls = 'g-re';
+      else if (v === 'FS' || v === 'NU') cls = 'g-no';
+      else if (v === 'Baja') cls = 'g-ba';
+      else if (v === 'No') cls = 'g-pe';
+      return h('td', { class: 'g gr ' + cls, title: tip }, v);
     }
     // Filas de la Gantt ya filtradas por los embudos de columna (fuente única: tabla y export).
     function ganttFiltradas(list) { return cfGantt.apply(list.filter(e => e.estado !== 'baja')); }
@@ -881,19 +879,19 @@
       const CAP = 250, capped = eqs.length > CAP, shown = eqs.slice(0, CAP);
       const pr = gmode === 'pr';
       countNote.textContent = `${eqs.length} equipo(s) · MP ${YEAR}` + (capped ? ` · mostrando ${CAP}` : '');
-      const setGmode = v => { gmode = v; try { localStorage.setItem('sigem_gantt_mode', v); } catch (e) {} render(); };
+      const setGmode = v => { gmode = v; Object.keys(cfGantt.sets).forEach(k => { if (/^[pr]\d/.test(k)) delete cfGantt.sets[k]; }); try { localStorage.setItem('sigem_gantt_mode', v); } catch (e) {} render(); };
       const gToggle = h('div', { class: 'seg', title: 'Qué muestran las columnas de cada mes' },
         h('button', { class: !pr ? 'on' : '', onclick: () => setGmode('prog') }, 'Programado'),
         h('button', { class: pr ? 'on' : '', onclick: () => setGmode('pr') }, 'Programado vs realizado'));
       const legend = pr
         ? h('div', { class: 'gantt-legend' },
-          h('span', {}, h('i', { class: 'g-prog' }), 'P = programada'),
-          h('span', {}, h('i', { class: 'g-ok' }), '✓ Realizada'),
-          h('span', {}, h('i', { class: 'g-re' }), '↻/Cx Reprogramada'),
-          h('span', {}, h('i', { class: 'g-no' }), '✗ No realizada (vencida)'),
-          h('span', {}, h('i', { class: 'g-pe' }), '· Pendiente'))
+          h('span', {}, h('i', { class: 'g-prog' }), 'P = programada (Sí)'),
+          h('span', {}, h('i', { class: 'g-ok' }), 'Sí = realizada'),
+          h('span', {}, h('i', { class: 'g-re' }), 'Cx = reprogramada'),
+          h('span', {}, h('i', { class: 'g-no' }), 'No realizada (vencida)'),
+          h('span', {}, h('i', { class: 'g-pe' }), '· pendiente'))
         : h('div', { class: 'gantt-legend' },
-          h('span', {}, h('i', { class: 'g-prog' }), 'Programada'),
+          h('span', {}, h('i', { class: 'g-prog' }), 'Programada (Sí)'),
           h('span', {}, h('i', { class: 'g-empty' }), 'Sin programar'));
       // Columnas identificadoras CON FILTROS (embudos tipo Excel). En modo P-vs-R abarcan 2 filas.
       const gthFix = (key, label, getter, cls) => h('th', { class: cls || '', rowspan: pr ? '2' : null }, h('span', { class: 'th-lbl' }, label), cfGantt.btn(key, label, getter));
@@ -903,12 +901,17 @@
         gthFix('servicio', 'Servicio', e => e.servicio || '—'),
         gthFix('unidad', 'Unidad', e => e.unidad || '—')
       ];
+      // Embudo de columna por mes para P y R (key 'p'+i / 'r'+i; el getter da el valor a filtrar).
+      const mFun = (key, i, getter) => cfGantt.btn(key + i, (key === 'p' ? 'Programación · ' : 'Resultado · ') + MES_ESP(i), getter);
       const thead = pr
         ? h('thead', {},
           h('tr', {}, ...idHead, ...MESES.map((m, i) => h('th', { colspan: '2', class: 'g-mh g-grp' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3)))),
-          h('tr', {}, ...MESES.map((m, i) => [h('th', { class: 'g-sub g-grp' + (i === MONTH ? ' g-cur' : ''), title: 'Programación' }, 'P'), h('th', { class: 'g-sub' + (i === MONTH ? ' g-cur' : ''), title: 'Resultado' }, 'R')]).flat())
+          h('tr', {}, ...MESES.map((m, i) => [
+            h('th', { class: 'g-sub g-grp' + (i === MONTH ? ' g-cur' : ''), title: 'Programación · ' + MES_ESP(i) }, h('span', { class: 'th-lbl' }, 'P'), mFun('p', i, e => gP(e, i))),
+            h('th', { class: 'g-sub' + (i === MONTH ? ' g-cur' : ''), title: 'Resultado · ' + MES_ESP(i) }, h('span', { class: 'th-lbl' }, 'R'), mFun('r', i, e => gR(e, i)))
+          ]).flat())
         )
-        : h('thead', {}, h('tr', {}, ...idHead, ...MESES.map((m, i) => h('th', { class: 'g-mh' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, MES_ESP(i).slice(0, 3)))));
+        : h('thead', {}, h('tr', {}, ...idHead, ...MESES.map((m, i) => h('th', { class: 'g-mh' + (i === MONTH ? ' g-cur' : ''), title: MES_ESP(i) }, h('span', { class: 'th-lbl' }, MES_ESP(i).slice(0, 3)), mFun('p', i, e => gP(e, i))))));
       const fila = e => {
         const cells = [
           h('td', { class: 'g-fix1 mono' }, e.inv),
@@ -974,8 +977,8 @@
     const rows = list.map(e => {
       const row = [e.inv, e.equipo || '', e.servicio || '', e.unidad || ''];
       MESES.forEach((m, i) => {
-        row.push((e.prog || {})[MESES[i]] || (H.mpProgramadaEnMes(e, MESES[i]) ? 'P' : ''));
-        row.push(H.resultadoMPMes(e, YEAR, i) || (H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''));
+        const p = (e.prog || {})[MESES[i]]; row.push(p ? (p === 'X' ? 'Sí' : p) : (H.mpProgramadaEnMes(e, MESES[i]) ? 'Sí' : ''));
+        const r = H.resultadoMPMes(e, YEAR, i); row.push(r ? (r === 'Si' ? 'Sí' : r) : (H.mpProgramadaEnMes(e, MESES[i]) ? 'Pendiente' : ''));
       });
       return row;
     });

@@ -576,7 +576,8 @@ table.dense thead th:hover .funnel { opacity: .55; }
 
 .gantt-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 table.gantt { width: 100%; }
-table.gantt th.g-mh { text-align: center; min-width: 38px; padding: 5px 4px; font-size: 11px; }
+table.gantt th.g-mh { text-align: center; min-width: 48px; padding: 5px 4px; font-size: 11px; }
+table.gantt th.g-mh .th-lbl { margin-right: 3px; }
 table.gantt th.g-mh.g-cur { color: var(--accent); border-bottom: 2px solid var(--accent); }
 table.gantt th.g-fix1, table.gantt td.g-fix1 { position: sticky; left: 0; z-index: 2; background: var(--surface); min-width: 86px; }
 table.gantt th.g-fix2, table.gantt td.g-fix2 { position: sticky; left: 86px; z-index: 2; background: var(--surface); min-width: 150px; box-shadow: 1px 0 0 var(--border); }
@@ -591,7 +592,8 @@ table.gantt td.g-pe { color: var(--faint); }
 table.gantt td.g-empty { color: transparent; }
 table.gantt td.g-prog { background: var(--accent-bg); color: var(--accent); }
 /* Modo "Programado vs realizado": dos subcolumnas (P | R) por mes */
-table.gantt th.g-sub { text-align: center; min-width: 22px; padding: 2px 3px; font-size: 9.5px; font-weight: 700; color: var(--faint); }
+table.gantt th.g-sub { text-align: center; min-width: 34px; padding: 2px 3px; font-size: 9.5px; font-weight: 700; color: var(--faint); white-space: nowrap; }
+table.gantt th.g-sub .th-lbl { margin-right: 2px; }
 table.gantt th.g-sub.g-cur { color: var(--accent); }
 table.gantt.gantt-pr th.g-mh { min-width: 0; }
 table.gantt td.gp, table.gantt td.gr { min-width: 24px; padding: 4px 3px; font-size: 10px; }
