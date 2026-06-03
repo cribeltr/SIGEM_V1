@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.12';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.13';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -721,6 +721,7 @@
     let f = { q: params.q || '', estado: params.estado || 'todos', servicio: params.servicio || '', fam: params.fam || '', sinEnc: false, sinProg: !!params.sinProg };
     let sortKey = 'inv', sortDir = 1;
     let vmode = 'equipo';   // 'equipo' = 1 fila/equipo · 'mes' = 1 fila por equipo y mes con MP
+    let gmode = 'resultado';   // Carta Gantt: 'resultado' | 'cumpl' (programado vs realizado)
     const cf = colFilters(render);
     const cfMes = colFilters(render);   // filtros tipo Excel para el modo "Por mes" (filas equipo×mes)
     const mpMesLabel = e => { if (e.estado === 'baja') return '—'; const st = H.mpEstadoMes(e, YEAR, MONTH); if (st === 'ejecutada') return 'Hecha'; if (st === 'reprogramada') return 'Reprog.'; if (st === 'otro') return 'Falla'; return H.mpProgramadaEnMes(e, MESES[MONTH]) ? 'Pendiente' : 'No prog.'; };
@@ -842,31 +843,57 @@
       kbList = { rows: shown.map(r => r.e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
     }
-    // Carta Gantt: una fila por equipo, una columna por mes, celda = resultado de la MP.
+    // Responsable de la MP de un mes: ejecutor del evento o, si no hay, el asignado del mes.
+    function gEjec(e, i) {
+      const ev = H.eventoMPMes(e.inv, YEAR, i); if (ev && ev.ejecutor) return ev.ejecutor;
+      const km = `${YEAR}-${String(i + 1).padStart(2, '0')}`; return ((S.asignacionesMP || {})[km] || {})[e.inv] || '';
+    }
+    // Carta Gantt: una fila por equipo, una columna por mes. La celda muestra el RESULTADO
+    // o el cumplimiento (PROGRAMADO vs REALIZADO) según gmode. El tooltip detalla responsable.
     function ganttCelda(e, i) {
       const r = H.resultadoMPMes(e, YEAR, i);
       const prog = H.mpProgramadaEnMes(e, MESES[i]);
+      const ejec = gEjec(e, i);
+      const tip = `${MES_ESP(i)} · ${e.equipo || e.inv}\n${prog ? 'Programado' : 'No programado'}\nResultado: ${r || '—'}\nResponsable: ${ejec || '—'}`;
+      if (gmode === 'cumpl') {
+        const est = H.mpEstadoMes(e, YEAR, i);   // ejecutada | reprogramada | otro | pendiente
+        if (est === 'ejecutada') return h('td', { class: 'g g-ok', title: tip }, '✓');
+        if (!prog) return h('td', { class: 'g g-empty' }, '');
+        if (est === 'reprogramada') return h('td', { class: 'g g-re', title: tip }, '↻');
+        if (i > MONTH) return h('td', { class: 'g g-pe', title: tip }, '·');   // mes futuro: aún no vence
+        return h('td', { class: 'g g-no', title: tip }, '✗');   // programado y vencido sin realizar
+      }
       if (!r && !prog) return h('td', { class: 'g g-empty' }, '');
-      if (!r) return h('td', { class: 'g g-pe', title: MES_ESP(i) + ' · programada, pendiente' }, '·');
+      if (!r) return h('td', { class: 'g g-pe', title: tip }, '·');
       let cls = 'g-re', txt = r;
       if (r === 'Si') { cls = 'g-ok'; txt = '✓'; }
       else if (/^C\d/.test(r)) cls = 'g-re';
       else if (r === 'FS' || r === 'NU') cls = 'g-no';
       else if (r === 'Baja') { cls = 'g-ba'; txt = 'Baja'; }
       else if (r === 'No') { cls = 'g-pe'; txt = 'No'; }
-      return h('td', { class: 'g ' + cls, title: MES_ESP(i) + ' · ' + r }, txt);
+      return h('td', { class: 'g ' + cls, title: tip }, txt);
     }
     function renderGantt(list) {
       const eqs = list.filter(e => e.estado !== 'baja');
       const CAP = 250, capped = eqs.length > CAP, shown = eqs.slice(0, CAP);
       countNote.textContent = `${eqs.length} equipo(s) · MP ${YEAR}` + (capped ? ` · mostrando ${CAP}` : '');
-      const legend = h('div', { class: 'gantt-legend' },
-        h('span', {}, h('i', { class: 'g-ok' }), 'Realizada (Sí)'),
-        h('span', {}, h('i', { class: 'g-re' }), 'Reprogramada (C1–C8)'),
-        h('span', {}, h('i', { class: 'g-no' }), 'FS / NU'),
-        h('span', {}, h('i', { class: 'g-ba' }), 'Baja'),
-        h('span', {}, h('i', { class: 'g-pe' }), 'Pendiente'),
-        h('span', {}, h('i', { class: 'g-empty' }), 'Sin MP'));
+      const gToggle = h('div', { class: 'seg', title: 'Qué muestra cada celda' },
+        h('button', { class: gmode === 'resultado' ? 'on' : '', onclick: () => { gmode = 'resultado'; render(); } }, 'Resultado'),
+        h('button', { class: gmode === 'cumpl' ? 'on' : '', onclick: () => { gmode = 'cumpl'; render(); } }, 'Programado vs realizado'));
+      const legend = gmode === 'cumpl'
+        ? h('div', { class: 'gantt-legend' },
+          h('span', {}, h('i', { class: 'g-ok' }), '✓ Realizada'),
+          h('span', {}, h('i', { class: 'g-re' }), '↻ Reprogramada'),
+          h('span', {}, h('i', { class: 'g-no' }), '✗ No realizada (vencida)'),
+          h('span', {}, h('i', { class: 'g-pe' }), '· Pendiente'),
+          h('span', {}, h('i', { class: 'g-empty' }), 'Sin programar'))
+        : h('div', { class: 'gantt-legend' },
+          h('span', {}, h('i', { class: 'g-ok' }), 'Realizada (Sí)'),
+          h('span', {}, h('i', { class: 'g-re' }), 'Reprogramada (C1–C8)'),
+          h('span', {}, h('i', { class: 'g-no' }), 'FS / NU'),
+          h('span', {}, h('i', { class: 'g-ba' }), 'Baja'),
+          h('span', {}, h('i', { class: 'g-pe' }), 'Pendiente'),
+          h('span', {}, h('i', { class: 'g-empty' }), 'Sin MP'));
       const table = h('table', { class: 'dense gantt' },
         h('thead', {}, h('tr', {},
           h('th', { class: 'g-fix1' }, 'N° Inv.'),
@@ -876,7 +903,7 @@
           h('td', { class: 'g-fix1 mono' }, e.inv),
           h('td', { class: 'g-fix2' }, capCell(150, e.equipo || '—')),
           ...MESES.map((m, i) => ganttCelda(e, i))))));
-      mount(tblWrap, legend, h('div', { class: 'gantt-scroll' }, table),
+      mount(tblWrap, h('div', { class: 'gantt-head' }, gToggle, legend), h('div', { class: 'gantt-scroll' }, table),
         capped ? h('div', { class: 'faint', style: { padding: '8px 2px', fontSize: '12px' } }, `Mostrando ${CAP} de ${eqs.length} equipos — usa los filtros (servicio, familia, estado) para acotar.`) : null);
       kbList = { rows: shown.map(e => e.inv), open: inv => go('equipo', { inv }), idx: -1 };
       updBulk();
