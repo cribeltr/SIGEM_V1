@@ -31,16 +31,16 @@
   --muted:     #58675e;
   --faint:     #8a968e;
 
-  --accent:    #15924f;   /* verde operativo */
-  --accent-2:  #0f7a41;   /* hover */
-  --accent-bg: #e6f4ec;
+  --accent:    #0e7a42;   /* verde operativo (AA sobre blanco) */
+  --accent-2:  #0c6837;   /* hover */
+  --accent-bg: #e7f5ee;
   --accent-fg: #ffffff;
 
-  --op:   #15924f;  --op-bg:#e6f4ec;
-  --noop: #d83a47;  --noop-bg:#fdecec;
-  --st:   #c97a12;  --st-bg:#fbf1e1;
-  --baja: #647686;  --baja-bg:#eef1f3;
-  --desc: #6b7682;  --desc-bg:#eef1f3;
+  --op:   #0e7a42;  --op-bg:#e7f5ee;
+  --noop: #c42836;  --noop-bg:#fdeced;
+  --st:   #8a5410;  --st-bg:#fbf2e3;
+  --baja: #54616f;  --baja-bg:#eef1f3;
+  --desc: #54616f;  --desc-bg:#eef1f3;
 
   --shadow:    0 1px 2px rgba(18,30,24,.06), 0 3px 10px rgba(18,30,24,.05);
   --shadow-lg: 0 14px 44px rgba(16,28,22,.22);
@@ -180,6 +180,7 @@ input[type=text], input[type=date], input[type=number], input[type=search], sele
   border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 5px 8px; width: 100%; }
 textarea { resize: vertical; min-height: 60px; line-height: 1.5; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 select { cursor: pointer; appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, var(--faint) 50%), linear-gradient(135deg, var(--faint) 50%, transparent 50%);
   background-position: calc(100% - 13px) 53%, calc(100% - 9px) 53%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 24px; }
