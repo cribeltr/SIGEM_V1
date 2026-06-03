@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-02 · v2.0';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v2.1';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -2584,7 +2584,7 @@
 
     const app = h('div', { class: 'app' },
       h('header', { class: 'topbar' },
-        h('div', { class: 'brand', title: 'Inicio', style: { cursor: 'pointer' }, onclick: () => go('inicio') }, h('span', { class: 'mark' }, 'H'), h('span', { class: 'brand-name s-hide' }, 'HHHA')),
+        h('div', { class: 'brand', title: 'Inicio', style: { cursor: 'pointer' }, onclick: () => go('inicio') }, h('span', { class: 'mark' }, 'H'), h('span', { class: 'brand-name s-hide' }, 'HHHA'), h('span', { class: 'brand-ver', title: 'Versión · ' + APP_VERSION }, APP_VERSION.split('· ').pop())),
         h('div', { class: 'tb-spacer' }),
         h('div', { class: 'search-pill big', onclick: () => openCmdk() }, svg(ic.search, 16), h('span', { class: 'muted' }, 'Buscar equipo o acción…'), h('span', { class: 'kbd s-hide' }, '⌘K')),
         h('div', { class: 'tb-spacer' }),
