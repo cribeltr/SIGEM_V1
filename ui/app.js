@@ -2598,7 +2598,7 @@
     mount(document.getElementById('root'), app);
 
     applyTheme(localStorage.getItem('sigem_theme') || 'light');
-    applyDensity(localStorage.getItem('sigem_density') || 'comodo');
+    applyDensity(localStorage.getItem('sigem_density') || 'compacto');
     fromHash();
     renderView(); syncNav(); refreshChrome();
     setTimeout(recordatoriosAlAbrir, 600);
