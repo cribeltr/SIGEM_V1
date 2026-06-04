@@ -1420,7 +1420,9 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
   }
 
   function parsearHojaPMP(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja PMP sin encabezados reconocibles.');
     const header = rows[headerIdx];
@@ -1450,7 +1452,9 @@ if (typeof window !== "undefined") { window.SEED = SEED; }
   }
 
   function parsearHojaRegistro(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja Registro sin encabezados reconocibles.');
     const header = rows[headerIdx];
@@ -2792,7 +2796,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.19';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.20';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -5554,7 +5558,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
   }
   function subirPlantilla(y, m) {
     if (!window.XLSX) return toast('XLSX no disponible', 'error');
-    const inp = h('input', { type: 'file', accept: '.xlsx,.xls', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); const hoja = wb.SheetNames.find(n => /asignaci/i.test(n)) || wb.SheetNames[0]; const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, defval: null, blankrows: false }); const r = H.procesarPlantillaMP(rows, y, m); if (!r.ok) return toast(r.error, 'error'); toast(`${r.cargadas} asignaciones cargadas en ${r.mes} ${r.year}`, 'success'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
+    const inp = h('input', { type: 'file', accept: '.xlsx,.xls', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (!f) return; try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); const hoja = wb.SheetNames.find(n => /asignaci/i.test(n)) || wb.SheetNames[0]; const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, raw: false, defval: null, blankrows: false }); const r = H.procesarPlantillaMP(rows, y, m); if (!r.ok) return toast(r.error, 'error'); toast(`${r.cargadas} asignaciones cargadas en ${r.mes} ${r.year}`, 'success'); } catch (err) { toast('Error: ' + err.message, 'error'); } } });
     document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 1000);
   }
   async function importarMaestro(after) {

@@ -805,7 +805,9 @@
   }
 
   function parsearHojaPMP(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja PMP sin encabezados reconocibles.');
     const header = rows[headerIdx];
@@ -835,7 +837,9 @@
   }
 
   function parsearHojaRegistro(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja Registro sin encabezados reconocibles.');
     const header = rows[headerIdx];
