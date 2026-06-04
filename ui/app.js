@@ -57,7 +57,7 @@
   const { MESES, EJECUTORES, TIPOS_EVENTO, CAUSALES, ESTADO_LABEL, TIPO_PENDIENTE, ESTADO_PEND_LABEL, MOTIVOS_ANULACION, CARGOS_CONTACTO } = H;
   const fmtFecha = H.fmtFecha;
   const NOW = new Date(); const YEAR = NOW.getFullYear(); const MONTH = NOW.getMonth();
-  const APP_VERSION = '2026-06-03 · v3.18';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
+  const APP_VERSION = '2026-06-03 · v3.19';   // sello de build visible (barra superior y Configuración) para confirmar despliegue
   const ESTADO_CLS = { operativo: 'op', no_operativo: 'noop', en_servicio_tecnico: 'st', baja: 'baja', desconocido: 'desc' };
 
   function estadoPill(estado) {
@@ -75,6 +75,9 @@
     return 'bad';
   }
   function norm(s) { return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+  // Búsqueda tolerante a ceros a la izquierda en números/series ("00298" ≈ "298").
+  function stripZeros(s) { return String(s == null ? '' : s).replace(/\b0+(\d)/g, '$1'); }
 
   // ----------------------------- toast --------------------------------------
   const toastRoot = h('div', { class: 'toast-root' }); document.body.appendChild(toastRoot);
@@ -752,7 +755,7 @@
       if (params.caidos) list = list.filter(e => ['no_operativo', 'en_servicio_tecnico'].includes(e.estado));
       if (params.mpMes) list = list.filter(e => e.estado !== 'baja' && H.mpProgramadaEnMes(e, MESES[MONTH]) && H.mpEstadoMes(e, YEAR, MONTH) === 'pendiente');
       if (params.mpAtras) list = list.filter(e => e.estado !== 'baja' && [...Array(MONTH).keys()].some(m => H.mpProgramadaEnMes(e, MESES[m]) && H.mpEstadoMes(e, YEAR, m) === 'pendiente'));
-      if (f.q) { const q = norm(f.q); list = list.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`).includes(q)); }
+      if (f.q) { const q = norm(f.q), qz = stripZeros(q); list = list.filter(e => { const blob = norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca} ${e.modelo} ${e.servicio}`); return blob.includes(q) || (qz !== q && stripZeros(blob).includes(qz)); }); }
       list = cf.apply(list);
       list.sort((a, b) => {
         let va, vb;
@@ -2263,7 +2266,7 @@
       const acts = actions.filter(a => !nq || norm(a[0]).includes(nq));
       if (acts.length) { listEl.appendChild(h('div', { class: 'cmdk-sec' }, 'Acciones')); acts.forEach(a => addItem(a[2], a[0], '', a[1])); }
       if (nq.length >= 1) {
-        const eqs = H.getState().equipos.filter(e => norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca}`).includes(nq)).slice(0, 8);
+        const nqz = stripZeros(nq); const eqs = H.getState().equipos.filter(e => { const blob = norm(`${e.inv} ${e.equipo} ${e.serie} ${e.marca}`); return blob.includes(nq) || (nqz !== nq && stripZeros(blob).includes(nqz)); }).slice(0, 8);
         if (eqs.length) { listEl.appendChild(h('div', { class: 'cmdk-sec' }, 'Equipos')); eqs.forEach(e => addItem('▦', e.inv, `${e.equipo || ''} · ${e.servicio || ''}`, () => { closeCmdk(); go('equipo', { inv: e.inv }); })); }
       }
       hi();
