@@ -1,5 +1,5 @@
 /****************************************************************************
- * SIGEM · Backend de almacenamiento en Google Sheets (Apps Script Web App)
+ * Gestión Equipos Críticos HHHA · Backend de almacenamiento en Google Sheets (Apps Script Web App)
  * --------------------------------------------------------------------------
  * Guarda el estado de SIGEM (JSON comprimido) en una hoja OCULTA `_SIGEM_DATA`
  * y escribe además las hojas de trabajo legibles que envía la app (para poder
@@ -35,7 +35,7 @@ function doGet(e) {
     // Por defecto: SERVIR LA APP (verla desde cualquier parte con la URL .../exec).
     try {
       return HtmlService.createHtmlOutputFromFile('Index')
-        .setTitle('SIGEM · Equipos Biomédicos Críticos')
+        .setTitle('Gestión Equipos Críticos HHHA')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     } catch (e2) {
@@ -209,7 +209,7 @@ function writeSheets(sheets) {
 // Lista blanca de nombres SIGEM conocidos: SÓLO se eliminan esos. Cualquier hoja que el
 // usuario haya creado a mano (otro nombre) NO se toca. Si en el futuro se renombran hojas,
 // agrega aquí el nombre antiguo. Las del envío actual y las de sistema ("_") se conservan.
-var SIGEM_RETIRADAS = ['Correctivos', 'MP por mes', 'En servicio técnico', 'No operativos'];
+var SIGEM_RETIRADAS = ['Correctivos', 'MP por mes', 'En servicio técnico', 'No operativos', 'Actividad', 'Uso (resumen)'];
 var SIGEM_RETIRADAS_PREFIJO = ['Plan anual MP', 'Hoja de ruta'];
 function esHojaSigemRetirada(name) {
   if (SIGEM_RETIRADAS.indexOf(name) !== -1) return true;

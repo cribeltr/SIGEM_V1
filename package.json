@@ -5,7 +5,7 @@
   "description": "SIGEM · Gestión de Equipos Biomédicos Críticos — app de archivo único, offline, con almacenamiento opcional en Google Sheets (Apps Script).",
   "scripts": {
     "build": "node tools/build.js",
-    "test": "node tools/smoke-test.js",
+    "test": "node tools/smoke-test.js && node tools/export-test.js",
     "start": "node tools/build.js && echo \"Abre app.html en el navegador\""
   },
   "devDependencies": {

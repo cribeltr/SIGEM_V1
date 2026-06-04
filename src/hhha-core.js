@@ -34,7 +34,8 @@
     confirm: function (/* msg */) { return true; },   // antes: window.confirm(...)
     alert: function (/* msg */) {},                   // antes: window.alert(...)
     prompt: function (/* msg */) { return null; },    // antes: window.prompt(...)
-    onChange: function () {}                           // antes: navigate()/refreshNav()/refreshStateIndicator()
+    onChange: function () {},                          // antes: navigate()/refreshNav()/refreshStateIndicator()
+    cloudConnected: function () { return false; }      // true si hay auto-sync al Sheet (respaldo real)
   };
 
   // Entorno. Permite correr fuera del navegador (Node) inyectando shims.
@@ -105,7 +106,10 @@
   const DOCS_CORRECTIVO = ['Solicitud SIGEM con tarea cerrada', 'Cotización', 'Informe técnico trato directo', 'Orden de compra', 'Guía de despacho de repuestos', 'Informe visita diagnóstica', 'Informe visita correctiva', 'Hoja de envío', 'Informe técnico ST externo', 'Guía de despacho de retorno'];
   const DOCS_PREVENTIVO = ['Protocolo / hoja de MP', 'Pauta de monitoreo diario (DEA)', 'Firma jefe equipo médico', 'Informe técnico de empresa externa'];
 
-  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  const TIPO_PENDIENTE = { documento_faltante: 'Documento faltante', firma_faltante: 'Firma faltante', reprogramacion: 'Reprogramación MP', recomendacion_tecnica: 'Recomendación técnica', pauta_monitoreo: 'Pauta de Monitoreo Diario', gestion_general: 'Gestión general', seguimiento: 'Seguimiento de estado' };
+  // Cargos de contacto del servicio (referencia organizacional, editable).
+  const CARGOS_CONTACTO = ['Supervisor de Servicio Clínico', 'Encargado de Equipos', 'Jefe del Centro de Responsabilidad CCRR'];
+  function contactosPorDefecto() { return CARGOS_CONTACTO.map((cargo, i) => ({ id: i + 1, servicio: '', nombre: '', apellido: '', anexo: '', correo: '', cargo })); }
   // Estados de pendiente orientados a la acción: No iniciado -> En proceso -> Resuelto.
   // 'cerrado' se conserva como estado final (= Resuelto) para no romper conteos (!== 'cerrado').
   const ESTADO_PEND_LABEL = { no_iniciado: 'No iniciado', en_proceso: 'En proceso', cerrado: 'Resuelto' };
@@ -163,9 +167,12 @@
     if (!d.conflictos) d.conflictos = [];
     if (!d.importaciones) d.importaciones = [];
     if (!d.prefs) d.prefs = {};
+    if (!d.contactos) d.contactos = contactosPorDefecto();
+    if (!d.actividad) d.actividad = [];
     d.counters = d.counters || {};
     if (d.counters.conflicto == null) d.counters.conflicto = (d.conflictos.length || 0) + 1;
     if (d.counters.importacion == null) d.counters.importacion = (d.importaciones.length || 0) + 1;
+    if (d.counters.contacto == null) d.counters.contacto = d.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
     // Normalizar estados de pendientes de versiones previas (creado/abierto -> no_iniciado).
     (d.pendientes || []).forEach(p => { p.estado = normalizarEstadoPend(p.estado); });
     d.__v = APP_VERSION;
@@ -233,6 +240,7 @@
     return cambios;
   }
 
+  let _cacheLlenoAvisado = false;   // evita repetir el aviso de caché lleno (cuando hay Sheet conectado)
   function persistirState() {
     // Devuelve {ok, bytes, error}.
     try {
@@ -260,20 +268,33 @@
       if (resCount > 0) {
         state.conflictos = state.conflictos.filter(c => !(c.estado || '').startsWith('resuelto'));
         res = persistirState();
-        if (res.ok) {
+        if (res.ok && !UI.cloudConnected()) {
           UI.notify(`Almacenamiento liberado: ${resCount} conflictos resueltos podados del historial. Tu backup JSON los conserva.`, 'warn-backup',
             { label: 'Descargar backup', run: exportarBackupJSON });
         }
       }
     }
     if (!res.ok) {
-      // Intento 2: avisar para exportar
+      if (UI.cloudConnected()) {
+        // Conectado con auto-sync: el Google Sheet ES el respaldo, así que un caché local
+        // lleno NO es crítico. Se continúa y onChange() empuja al Sheet. Aviso calmado una
+        // sola vez (no la alarma "descarga backup AHORA", que aquí sería innecesaria).
+        if (!_cacheLlenoAvisado) {
+          _cacheLlenoAvisado = true;
+          UI.notify('Caché del navegador lleno: se sigue trabajando y guardando en Google Sheets (tus datos están a salvo en la planilla).', 'warn-backup');
+        }
+        UI.onChange();
+        return;
+      }
+      // Sin conexión: localStorage es el ÚNICO almacén → alarma para respaldar.
       UI.notify('Almacenamiento del navegador lleno. Descarga el backup AHORA antes de seguir.', 'error',
         { label: 'Descargar', run: exportarBackupJSON });
       return;
     }
-    // Recordatorio de backup cada N cambios reales del usuario
-    if (!isInternal && state.__userActions > 0 && state.__userActions % 10 === 0) {
+    _cacheLlenoAvisado = false;   // persistió bien: se rearma el aviso si vuelve a llenarse
+    // Recordatorio de backup cada N cambios reales del usuario (solo SIN Sheet conectado:
+    // con auto-sync el respaldo es automático y no hace falta insistir).
+    if (!isInternal && !UI.cloudConnected() && state.__userActions > 0 && state.__userActions % 10 === 0) {
       UI.notify(`Llevas ${state.__userActions} cambios. Recuerda descargar backup.`, 'warn-backup',
         { label: 'Descargar', run: exportarBackupJSON });
     }
@@ -332,10 +353,12 @@
       __created: new Date().toISOString(),
       __updated: new Date().toISOString(),
       equipos, eventos, ciclos, pendientes, tareas,
-      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1 },
+      counters: { evento: eventos.length + 1, pend: pendientes.length + 1, tarea: tareas.length + 1, ciclo: 1, audit: 1, conflicto: 1, importacion: 1, contacto: CARGOS_CONTACTO.length + 1 },
       audit: [],
       asignacionesMP: {},
       correos: [],
+      contactos: contactosPorDefecto(),
+      actividad: [],
       conflictos: [],
       importaciones: [],
       prefs: {}
@@ -428,6 +451,49 @@
     });
     return best;
   }
+
+  // Análisis de TIEMPOS DE RESOLUCIÓN (días apertura→cierre) y ENVEJECIMIENTO de lo
+  // abierto, para pendientes y ciclos correctivos. Solo lectura; no muta estado.
+  function analisisTiempos() {
+    const hoy = hoyLocal();
+    const dd = (a, b) => (a && b) ? diasEntreFechas(a, b) : null;
+    const prom = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 10) / 10 : null;
+    const buckets = arr => { const b = { d7: 0, d14: 0, d30: 0, d30p: 0 }; arr.forEach(d => { if (d <= 7) b.d7++; else if (d <= 14) b.d14++; else if (d <= 30) b.d30++; else b.d30p++; }); return b; };
+
+    const pend = (state.pendientes || []).filter(p => !p.anulado);
+    const pCerr = [], pAbi = [], porEjec = {}, porTipo = {};
+    pend.forEach(p => {
+      const ek = p.ejecutor || '— sin asignar';
+      const e = porEjec[ek] || (porEjec[ek] = { ejecutor: ek, abiertos: 0, cerrados: 0, _sumC: 0, _sumE: 0 });
+      const tk = p.tipo || '—';
+      const t = porTipo[tk] || (porTipo[tk] = { tipo: tk, n: 0, _sum: 0 });
+      if (p.estado === 'cerrado' && p.fechaCierre && p.fechaCrea) {
+        const d = dd(p.fechaCrea, p.fechaCierre);
+        if (d != null && d >= 0) { pCerr.push(d); e.cerrados++; e._sumC += d; t.n++; t._sum += d; }
+      } else if (p.estado !== 'cerrado' && p.fechaCrea) {
+        const d = dd(p.fechaCrea, hoy);
+        if (d != null && d >= 0) { pAbi.push({ id: p.id, inv: p.inv, tipo: p.tipo, ejecutor: p.ejecutor || null, dias: d }); e.abiertos++; e._sumE += d; }
+      }
+    });
+    const cic = (state.ciclos || []).filter(c => c.estado !== 'anulado' && !c.anulado);
+    const cCerr = [], cAbi = [];
+    cic.forEach(c => {
+      if (c.estado === 'cerrado' && c.fechaApertura && c.fechaCierre) {
+        const d = dd(c.fechaApertura, c.fechaCierre); if (d != null && d >= 0) cCerr.push(d);
+      } else if (c.estado === 'abierto' && c.fechaApertura) {
+        const d = dd(c.fechaApertura, hoy); if (d != null && d >= 0) cAbi.push({ id: c.id, inv: c.inv, folio: c.folio || null, dias: d });
+      }
+    });
+    const ejecLista = Object.keys(porEjec).map(k => { const e = porEjec[k]; return { ejecutor: e.ejecutor, abiertos: e.abiertos, cerrados: e.cerrados, promCierre: e.cerrados ? Math.round(e._sumC / e.cerrados * 10) / 10 : null, edadProm: e.abiertos ? Math.round(e._sumE / e.abiertos * 10) / 10 : null }; })
+      .sort((a, b) => (b.abiertos - a.abiertos) || (b.cerrados - a.cerrados));
+    const tipoLista = Object.keys(porTipo).map(k => porTipo[k]).filter(t => t.n).map(t => ({ tipo: t.tipo, n: t.n, prom: Math.round(t._sum / t.n * 10) / 10 })).sort((a, b) => b.prom - a.prom);
+    return {
+      pend: { cerrados: pCerr.length, abiertos: pAbi.length, promCierre: prom(pCerr), aging: buckets(pAbi.map(x => x.dias)), abiertosList: pAbi.sort((a, b) => b.dias - a.dias) },
+      ciclos: { cerrados: cCerr.length, abiertos: cAbi.length, promCierre: prom(cCerr), aging: buckets(cAbi.map(x => x.dias)), abiertosList: cAbi.sort((a, b) => b.dias - a.dias) },
+      porEjecutor: ejecLista, porTipo: tipoLista
+    };
+  }
+
   // Encargado actual: ingeniero del ciclo abierto o, si no, el último ejecutor.
   function encargadoDe(equipo) {
     if (equipo.encargado) return equipo.encargado;          // responsable asignado explícitamente
@@ -701,7 +767,8 @@
   function cambiarEstadoPend(p, nuevo) {
     const antes = p.estado;
     p.estado = nuevo;
-    if (nuevo === 'cerrado' && !p.fechaCierre) p.fechaCierre = hoyLocal();
+    if (nuevo === 'cerrado') { if (!p.fechaCierre) p.fechaCierre = hoyLocal(); }
+    else p.fechaCierre = null;   // reabrir limpia la fecha de cierre
     audit('pendiente', p.id, 'estado', antes, nuevo);
     save();
     UI.onChange();
@@ -738,7 +805,9 @@
   }
 
   function parsearHojaPMP(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja PMP sin encabezados reconocibles.');
     const header = rows[headerIdx];
@@ -768,7 +837,9 @@
   }
 
   function parsearHojaRegistro(ws) {
-    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, defval: null, blankrows: false });
+    // raw:false → lee el valor MOSTRADO (texto), para no perder ceros a la izquierda
+    // en N° Inventario y códigos (p. ej. "00298" no se convierte en 298).
+    const rows = ENV.xlsx.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null, blankrows: false });
     const headerIdx = rows.findIndex(r => r && r.some(c => /N° Inventario/i.test(String(c || ''))));
     if (headerIdx < 0) throw new Error('Hoja Registro sin encabezados reconocibles.');
     const header = rows[headerIdx];
@@ -899,11 +970,13 @@
         }, conflictosNuevos);
       });
 
-      // Registro_MP: P y R
+      // Registro_MP: la P (programación) ya se concilió arriba contra PMP; aquí solo
+      // se concilia la R (resultado). Solo si el equipo NO está en PMP se concilia
+      // también la P desde Registro (evita el conflicto DUPLICADO de la misma celda P).
       MESES.forEach(mes => {
         const regProg = (eq.registro || {})[mes] || {};
         const regMast = (fromReg && fromReg.reg[mes]) || {};
-        ['P', 'R'].forEach(campo => {
+        (fromPMP ? ['R'] : ['P', 'R']).forEach(campo => {
           const vp = valNorm(regProg[campo] || '');
           const vm = valNorm(regMast[campo] || '');
           if (vp === vm) {
@@ -1139,6 +1212,16 @@
 
   // Registra UNA Mantención Preventiva. (Núcleo de la antigua "mpRapida".)
   // d = {inv, fecha, resultado, ejecutor, obs, estadoSi, oficial='No', origen, forzarSinProg}
+  // Vincula el responsable del mes (fila "Responsable" de la matriz) con el
+  // ejecutor de una MP registrada interactivamente, para no ingresarlo a mano.
+  function setResponsableMesDesdeMP(inv, fecha, ejecutor) {
+    if (!inv || !fecha || !ejecutor) return;
+    const km = String(fecha).slice(0, 7);   // 'YYYY-MM'
+    if (!/^\d{4}-\d{2}$/.test(km)) return;
+    state.asignacionesMP = state.asignacionesMP || {};
+    state.asignacionesMP[km] = state.asignacionesMP[km] || {};
+    state.asignacionesMP[km][inv] = ejecutor;
+  }
   function registrarMP(d) {
     const eq = findEquipo(d.inv);
     if (!eq) return { ok: false, error: 'Equipo no encontrado' };
@@ -1166,11 +1249,99 @@
     if (d.origen) ev.origen = d.origen;
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    setResponsableMesDesdeMP(eq.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, 'MP rápida');
     setPref('ultimoEjecutor', d.ejecutor);
     setPref('ultimoResultadoMP', d.resultado);
     save();
     return { ok: true, evento: ev };
+  }
+
+  // Limpia MP duplicadas (más de una MP vigente del mismo equipo en el mismo mes,
+  // típicas del bug anterior o de borradores importados sin consolidar): conserva
+  // la "mejor" (oficial > fecha más reciente > id mayor) y ANULA el resto (con
+  // reversión de efectos). Devuelve cuántas anuló.
+  function consolidarMPDuplicadas() {
+    const groups = {};
+    state.eventos.filter(e => !e.anulado && e.tipo === 'Mantención preventiva' && e.fecha).forEach(e => {
+      const d = new Date(e.fecha + 'T00:00:00'); if (isNaN(d)) return;
+      const k = e.inv + '|' + d.getFullYear() + '-' + d.getMonth();
+      (groups[k] = groups[k] || []).push(e);
+    });
+    let anulados = 0;
+    Object.keys(groups).forEach(k => {
+      const g = groups[k]; if (g.length < 2) return;
+      g.sort((a, b) => ((b.oficial === 'Sí') - (a.oficial === 'Sí')) || (b.fecha || '').localeCompare(a.fecha || '') || (b.id - a.id));
+      for (let i = 1; i < g.length; i++) { anularEvento(g[i], 'Consolidación de MP duplicada del mes'); anulados++; }
+    });
+    if (anulados) { state.equipos.forEach(recalcEstadoEquipo); save(); }
+    return anulados;
+  }
+
+  // Corrige EN SITIO una MP ya registrada (p. ej. C6 → C3): revierte los efectos
+  // del resultado/fecha anteriores, aplica los nuevos y recalcula el estado del
+  // equipo. Mantiene un único evento (no duplica). d = {resultado, fecha?, ejecutor?, obs?, estadoSi?}.
+  function corregirMP(ev, d) {
+    if (!ev || ev.anulado) return { ok: false, error: 'Evento no editable' };
+    if (ev.tipo !== 'Mantención preventiva') return { ok: false, error: 'No es una mantención preventiva' };
+    const eq = findEquipo(ev.inv);
+    if (!eq) return { ok: false, error: 'Equipo no encontrado' };
+    if (!d.resultado) return { ok: false, error: 'Selecciona un resultado' };
+    const nuevaFecha = d.fecha || ev.fecha;
+    if (!nuevaFecha) return { ok: false, error: 'Fecha requerida' };
+
+    // 1) Revertir los efectos del resultado/fecha anteriores.
+    revertirEfectosMP(ev);
+    // 2) Aplicar los nuevos valores al evento.
+    if (d.resultado !== ev.resultado) audit('evento', ev.id, 'resultado', ev.resultado, d.resultado);
+    if (nuevaFecha !== ev.fecha) audit('evento', ev.id, 'fecha', ev.fecha, nuevaFecha);
+    ev.resultado = d.resultado;
+    ev.fecha = nuevaFecha;
+    if (d.ejecutor !== undefined && d.ejecutor !== '') ev.ejecutor = d.ejecutor;
+    if (d.obs !== undefined) ev.obs = d.obs || null;
+    ev.estado = estadoMPFinal(d.resultado, d.estadoSi);
+    ev.ts = new Date().toISOString();
+    // 3) Re-aplicar efectos (R del mes, pendientes por causal, marca R del mes siguiente) y recalcular estado.
+    aplicarEfectosEvento(ev);
+    recalcEstadoEquipo(eq);
+    setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
+    if (d.ejecutor) setPref('ultimoEjecutor', d.ejecutor);
+    setPref('ultimoResultadoMP', d.resultado);
+    save();
+    return { ok: true, evento: ev };
+  }
+
+  // Revierte los efectos colaterales de una MP (R del mes, marca R del mes
+  // siguiente por causal y pendientes automáticos derivados del evento).
+  // NO toca el estado del equipo: el llamador recalcula con recalcEstadoEquipo.
+  function revertirEfectosMP(ev) {
+    const eq = findEquipo(ev.inv);
+    if (!eq || !ev.fecha) return;
+    const [y, m] = ev.fecha.split('-').map(Number);
+    const mes = MESES[m - 1];
+    // Pendientes automáticos creados por este evento (reprogramación / localizar): se anulan si siguen abiertos.
+    state.pendientes.forEach(p => {
+      if (p.eventoOrigen === ev.id && !p.anulado && p.origen === 'auto_mp_causal' && p.estado !== 'cerrado') {
+        p.anulado = true; p.fechaAnulacion = new Date().toISOString(); p.motivoAnulacion = 'Corrección de la MP de origen';
+        audit('pendiente', p.id, 'anulado', false, true);
+      }
+    });
+    // Marca 'R' del mes siguiente, si la dejó un causal C1–C8 y sigue intacta.
+    if (/^C[1-8]$/.test(ev.resultado || '') && m < 12) {
+      const ms = MESES[m];
+      if (eq.registro && eq.registro[ms] && eq.registro[ms].P === 'R') {
+        delete eq.registro[ms].P;
+        if (Object.keys(eq.registro[ms]).length === 0) delete eq.registro[ms];
+      }
+    }
+    // R del mes: recomputar desde otras MP no anuladas del mismo mes (igual que en la anulación).
+    if (eq.registro && eq.registro[mes]) {
+      const otras = state.eventos.filter(x => x.id !== ev.id && !x.anulado && x.inv === ev.inv &&
+        x.tipo === 'Mantención preventiva' && x.fecha && x.resultado &&
+        x.fecha.startsWith(`${y}-${String(m).padStart(2, '0')}`)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+      if (otras.length) eq.registro[mes].R = otras[0].resultado;
+      else { delete eq.registro[mes].R; if (Object.keys(eq.registro[mes]).length === 0) delete eq.registro[mes]; }
+    }
   }
 
   // Registro masivo de MPs. (Núcleo de la antigua "mpMasiva".)
@@ -1209,6 +1380,7 @@
       };
       state.eventos.push(ev);
       aplicarEfectosEvento(ev);
+      setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
       audit('evento', ev.id, 'creado', null, 'MP masiva');
       creados++;
     });
@@ -1232,6 +1404,25 @@
     const eq = findEquipo(d.inv);
     if (!eq) return { ok: false, error: 'Equipo no encontrado' };
     if (!d.fecha) return { ok: false, error: 'Fecha requerida' };
+    // MP — antiduplicado: si el equipo YA tiene una MP en ese mes (p. ej. un
+    // borrador importado del maestro), se ACTUALIZA ese evento en vez de crear
+    // un segundo (que se marcaría "duplicada"). Conserva un único registro/mes.
+    if (d.tipo === 'Mantención preventiva') {
+      const dRef = new Date(d.fecha + 'T00:00:00');
+      if (!isNaN(dRef)) {
+        const ex = eventoMPMes(d.inv, dRef.getFullYear(), dRef.getMonth());
+        if (ex) {
+          const r = corregirMP(ex, { resultado: d.resultado, fecha: d.fecha, ejecutor: d.ejecutor, obs: d.obs, estadoSi: d.mpEstadoSi || 'operativo' });
+          if (!r.ok) return r;
+          if (d.oficial && ex.oficial !== d.oficial) { audit('evento', ex.id, 'oficial', ex.oficial, d.oficial); ex.oficial = d.oficial; }
+          if (d.ejecutor2 != null) ex.ejecutor2 = d.ejecutor2 || null;
+          // El registro pasa a ser propio del usuario (deja de tratarse como "importado").
+          if (ex.origen === 'conciliacion_auto' || ex.origen === 'conciliacion') delete ex.origen;
+          save();
+          return { ok: true, evento: ex, consolidado: true };
+        }
+      }
+    }
     // Aviso MP en mes sin programación (la UI decide si confirma y reintenta forzando)
     if (d.tipo === 'Mantención preventiva' && !d.forzarSinProg) {
       const aviso = avisoMPSinProgramacion(eq, d.fecha);
@@ -1258,6 +1449,7 @@
     else if (d.tipo === 'Solicitud de trabajo') ev.estado = 'no operativo';
     state.eventos.push(ev);
     aplicarEfectosEvento(ev);
+    if (ev.tipo === 'Mantención preventiva') setResponsableMesDesdeMP(ev.inv, ev.fecha, ev.ejecutor);
     audit('evento', ev.id, 'creado', null, d.tipo);
     save();
     return { ok: true, evento: ev };
@@ -1368,6 +1560,19 @@
       });
       if (pendsAuto.length > 0) revertidos.push(`${pendsAuto.length} pendiente(s) automático(s) anulado(s)`);
     }
+    // 6. Baja anulada: reabrir los ciclos que esa baja había cerrado. Solo si el equipo,
+    //    ya recalculado, no quedó operativo ni en baja (no se admite ciclo abierto ahí).
+    if (eq && ev.tipo === 'Mantención preventiva' && ev.resultado === 'Baja' &&
+        eq.estado !== 'operativo' && eq.estado !== 'baja') {
+      const reabiertos = state.ciclos.filter(c => c.cerradoPorBaja === ev.id && c.estado === 'cerrado');
+      reabiertos.forEach(c => {
+        c.estado = 'abierto'; c.fechaCierre = null;
+        if (c.motivoCierre === 'Cierre por baja del equipo') c.motivoCierre = null;
+        delete c.cerradoPorBaja;
+        audit('ciclo', c.folio || ('#' + c.id), 'estado', 'cerrado', 'abierto');
+      });
+      if (reabiertos.length) revertidos.push(`${reabiertos.length} ciclo(s) reabierto(s) tras anular la baja`);
+    }
 
     audit('evento', ev.id, 'anulado', false, true);
     save();
@@ -1427,6 +1632,74 @@
     return { ok: true, pendiente: p };
   }
 
+  // ---- Contactos del servicio (referencia organizacional) ------------------
+  function getContactos() { return state.contactos || (state.contactos = contactosPorDefecto()); }
+  // Contactos vinculados a un servicio: los de ese servicio + los generales (sin servicio).
+  function contactosDeServicio(servicio) {
+    const s = (servicio || '').trim().toLowerCase();
+    return getContactos().filter(c => { const cs = (c.servicio || '').trim().toLowerCase(); return cs === '' || cs === s; });
+  }
+  function agregarContacto(c) {
+    c = c || {};
+    state.contactos = state.contactos || [];
+    if (state.counters.contacto == null) state.counters.contacto = state.contactos.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+    const nuevo = { id: state.counters.contacto++, servicio: c.servicio || '', nombre: c.nombre || '', apellido: c.apellido || '', anexo: c.anexo || '', correo: c.correo || '', cargo: c.cargo || '' };
+    state.contactos.push(nuevo);
+    audit('contacto', nuevo.id, 'creado', null, [nuevo.servicio, nuevo.cargo].filter(Boolean).join(' · '));
+    save();
+    return { ok: true, contacto: nuevo };
+  }
+  function actualizarContacto(id, campos) {
+    const c = (state.contactos || []).find(x => x.id === id);
+    if (!c) return { ok: false, error: 'Contacto no encontrado' };
+    ['servicio', 'nombre', 'apellido', 'anexo', 'correo', 'cargo'].forEach(k => {
+      if (campos && (k in campos)) { const v = campos[k] == null ? '' : String(campos[k]); if (c[k] !== v) { audit('contacto', c.id, k, c[k], v); c[k] = v; } }
+    });
+    save();
+    return { ok: true, contacto: c };
+  }
+  function eliminarContacto(id) {
+    const i = (state.contactos || []).findIndex(x => x.id === id);
+    if (i < 0) return { ok: false, error: 'Contacto no encontrado' };
+    const c = state.contactos.splice(i, 1)[0];
+    audit('contacto', id, 'eliminado', c ? c.cargo : '', null);
+    save();
+    return { ok: true };
+  }
+
+  // ---- Registro de actividad (todos los clics) -----------------------------
+  // Bitácora de uso de la app. Se guarda localmente con debounce y viaja al
+  // Sheet junto con el próximo guardado real (no genera una sincronización por
+  // cada clic). Anillo acotado para no inflar el almacenamiento.
+  const ACTIVIDAD_MAX = 1500;
+  let _actTimer = null;
+  function getActividad() { return state.actividad || (state.actividad = []); }
+  // Une dos registros de actividad (telemetría append-only) sin duplicar, ordenado y acotado.
+  function mergeActividad(a, b) {
+    const seen = new Set(), res = [];
+    (a || []).concat(b || []).forEach(e => {
+      if (!e || !e.ts) return;
+      const k = e.ts + '|' + (e.sesion || '') + '|' + (e.accion || '');
+      if (seen.has(k)) return; seen.add(k); res.push(e);
+    });
+    res.sort((x, y) => (x.ts || '').localeCompare(y.ts || ''));
+    if (res.length > ACTIVIDAD_MAX) res.splice(0, res.length - ACTIVIDAD_MAX);
+    return res;
+  }
+  function logActividad(accion, extra) {
+    if (!state || !accion) return;
+    state.actividad = state.actividad || [];
+    extra = extra || {};
+    const ent = { ts: new Date().toISOString(), sesion: extra.sesion || '', vista: extra.vista || '', cat: extra.cat || 'acción', accion: String(accion).replace(/\s+/g, ' ').trim().slice(0, 140) };
+    if (extra.inv) ent.inv = extra.inv;
+    ent.usuario = extra.usuario || 'Cristian';
+    if (!ent.accion) return;
+    state.actividad.push(ent);
+    if (state.actividad.length > ACTIVIDAD_MAX) state.actividad.splice(0, state.actividad.length - ACTIVIDAD_MAX);
+    clearTimeout(_actTimer);
+    _actTimer = setTimeout(function () { try { persistirState(); } catch (e) {} }, 1200);
+  }
+
   // Actualiza campos editables de un pendiente. (Núcleo del "Guardar" de abrirPendiente.)
   // cambios = {tipo, estado, ejecutor, desc, fechaComp, proxRecord}
   function actualizarPendiente(p, cambios) {
@@ -1436,7 +1709,8 @@
     p.desc = cambios.desc;
     p.fechaComp = cambios.fechaComp || null;
     p.proxRecord = cambios.proxRecord || null;
-    if (p.estado === 'cerrado' && !p.fechaCierre) p.fechaCierre = hoyLocal();
+    if (p.estado === 'cerrado') { if (!p.fechaCierre) p.fechaCierre = hoyLocal(); }
+    else p.fechaCierre = null;   // reabrir limpia la fecha de cierre
     save();
     UI.onChange();
     return { ok: true };
@@ -1525,6 +1799,13 @@
     const old = eq.estado;
     eq.estado = 'baja'; eq.estadoDesde = fecha;
     audit('equipo', eq.inv, 'estado', old, 'baja');
+    // Cerrar los ciclos correctivos abiertos del equipo (un equipo en baja no puede
+    // tener un ciclo en curso).
+    state.ciclos.filter(c => c.inv === eq.inv && c.estado === 'abierto').forEach(c => {
+      c.estado = 'cerrado'; c.fechaCierre = fecha; c.motivoCierre = 'Cierre por baja del equipo';
+      c.cerradoPorBaja = ev.id;   // etiqueta para poder reabrirlo si se anula esta baja
+      audit('ciclo', c.folio || ('#' + c.id), 'estado', 'abierto', 'cerrado');
+    });
     // Cerrar pendientes del equipo
     state.pendientes.filter(p => p.inv === eq.inv && p.estado !== 'cerrado').forEach(p => {
       p.estado = 'cerrado'; p.fechaCierre = fecha;
@@ -1547,7 +1828,10 @@
   // Reemplaza el state con un backup ya parseado. (Núcleo de "importData".)
   function importarBackup(data) {
     if (!data || !data.__v) return { ok: false, error: 'Archivo no válido (falta __v).' };
+    const prevAct = (state && state.actividad) ? state.actividad.slice() : [];
     state = migrate(data);
+    // La actividad es telemetría append-only: conservar la local + la importada (no se pierde al sincronizar).
+    state.actividad = mergeActividad(prevAct, state.actividad);
     normalizarEquipos();
     reconstruirCiclos();
     normalizarTiposEvento();
@@ -1785,7 +2069,11 @@
     APP_VERSION, STORAGE_KEY, MESES, MES_NUM, NUM_MES, MES_ESPANOL, EJECUTORES,
     TIPOS_EVENTO, CAUSALES, ESTADOS_PRIMARIOS, ESTADO_LABEL, SUBESTADOS_NOOP,
     SUBESTADOS_ST, DOCS_CORRECTIVO, DOCS_PREVENTIVO, TIPO_PENDIENTE, ESTADO_PEND_LABEL,
-    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP,
+    MOTIVOS_ANULACION, MP_CAUSAL_ESTADO, RESULTADOS_MP, CARGOS_CONTACTO,
+    // contactos del servicio
+    getContactos, contactosDeServicio, agregarContacto, actualizarContacto, eliminarContacto,
+    // registro de actividad (clics)
+    logActividad, getActividad,
     // estado / persistencia
     load, migrate, save, init, resetState, persistirState, stateEsFresh,
     normalizarEquipos, normalizarEstadoPend, limpiarEfectosAnulados, reconstruirCiclos, normalizarTiposEvento, normalizarEstadoEventos, asignarIdsEquipos, idsMPDuplicadas, oficializarTodosBorradores, bootstrapDatos,
@@ -1793,7 +2081,7 @@
     fmtFecha, hoyLocal, addDias, diasEntreFechas, getPref, setPref, valNorm, audit,
     // dominio (consultas)
     findEquipo, eventosDe, eventosDeTodos, pendientesDe, conflictosDe, ciclosDe,
-    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion,
+    ciclosAbiertosDe, encargadoDe, asignarEncargado, sinProgramacionMP, agregarNotaEquipo, notasDe, ultimaGestion, analisisTiempos,
     // dominio (motor de estados)
     estadoMPDesdeResultado, estadoMPFinal, etiquetaTipoEvento, estadoDesdeMatriz,
     recalcEstadoEquipo, diasEnEstado, resultadoMPMes, eventoMPMes, mpEstadoMes,
@@ -1805,7 +2093,7 @@
     parsearHojaRegistro, compararMaestro, registrarOActualizarConflicto,
     resolverConflicto, nombreCampoConflicto,
     // operaciones MP
-    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, registrarMPMasiva,
+    fechaSugeridaMP, avisoMPSinProgramacion, registrarMP, corregirMP, consolidarMPDuplicadas, registrarMPMasiva,
     // operaciones eventos
     crearEvento, docsEsperadosEvento, oficializarEvento, editarEvento, anularEvento,
     // operaciones pendientes / baja
